@@ -1,9 +1,3 @@
-# This implementation was adapted from https://github.com/Dao-AILab/flash-attention/blob/main/flash_attn/layers/rotary.py
-# Commit id: 3566596ad867ee415dd3c12616dd50c610176f6c
-# Rotary varlen support from https://github.com/Dao-AILab/flash-attention/pull/556
-
-# Copyright (c) 2023, Tri Dao.
-
 from typing import Optional, Tuple, Union
 
 import torch

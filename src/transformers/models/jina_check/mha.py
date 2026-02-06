@@ -1,9 +1,3 @@
-# This implementation was adapted from https://github.com/Dao-AILab/flash-attention/blob/main/flash_attn/modules/mha.py
-# Commit id: 6bbc532388e61185a92e2a563126739967b4c8c5
-# Rotary varlen support from https://github.com/Dao-AILab/flash-attention/pull/556
-
-# Copyright (c) 2023, Tri Dao.
-
 import math
 from functools import partial
 
