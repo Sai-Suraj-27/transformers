@@ -854,7 +854,7 @@ class JinaEmbeddingsV3Model(nn.Module):
 
         position_embeddings = self.rotary_emb(embedding_output, position_ids)
 
-        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape, dtype=torch.bfloat16)
 
         encoder_outputs = self.encoder(
             embedding_output,
