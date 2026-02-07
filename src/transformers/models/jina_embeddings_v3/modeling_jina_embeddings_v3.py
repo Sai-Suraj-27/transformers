@@ -761,10 +761,10 @@ class JinaEmbeddingsV3Model(nn.Module):
 
     def get_extended_attention_mask(
         self,
-        attention_mask: Tensor,
+        attention_mask: torch.Tensor,
         input_shape: tuple[int, ...],
         dtype: torch.dtype | None = None,
-    ) -> Tensor:
+    ) -> torch.Tensor:
         """
         Makes broadcastable attention and causal masks so that future and masked tokens are ignored.
 
