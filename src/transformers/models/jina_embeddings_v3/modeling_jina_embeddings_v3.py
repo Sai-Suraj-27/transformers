@@ -102,7 +102,9 @@ class JinaEmbeddingsV3RotaryEmbedding(nn.Module):
 
         self.config = config
 
-        # self.rope_type = self.config.rope_parameters["rope_type"]
+        self.rope_type = getattr(config, "rope_scaling", None)
+        if self.rope_type is None:
+            self.rope_type = "default"
         rope_init_fn: Callable = self.compute_default_rope_parameters
         # if self.rope_type != "default":
         #     rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
