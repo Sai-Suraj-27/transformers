@@ -313,13 +313,14 @@ class JinaEmbeddingsV3SelfOuput(nn.Module):
         input_tensor: torch.Tensor,
         adapter_mask: torch.Tensor | None = None,
     ):
-        unique_tasks = torch.unique(adapter_mask)
         hidden_states = self.dense(hidden_states)
-        for task_id in unique_tasks:
-            task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
-            task_hidden_states = hidden_states[task_indices]
-            task_hidden_states = self.dense(task_hidden_states, task_id=task_id)
-            hidden_states[task_indices] = task_hidden_states
+        if adapter_mask is not None:
+            unique_tasks = torch.unique(adapter_mask)
+            for task_id in unique_tasks:
+                task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
+                task_hidden_states = hidden_states[task_indices]
+                task_hidden_states = self.dense(task_hidden_states, task_id=task_id)
+                hidden_states[task_indices] = task_hidden_states
 
         hidden_states = self.dropout(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
@@ -365,13 +366,15 @@ class JinaEmbeddingsV3Intermediate(nn.Module):
         hidden_states: torch.Tensor,
         adapter_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        unique_tasks = torch.unique(adapter_mask)
         hidden_states = self.dense(hidden_states)
-        for task_id in unique_tasks:
-            task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
-            task_hidden_states = hidden_states[task_indices]
-            task_hidden_states = self.dense(task_hidden_states, task_id=task_id)
-            hidden_states[task_indices] = task_hidden_states
+
+        if adapter_mask is not None:
+            unique_tasks = torch.unique(adapter_mask)
+            for task_id in unique_tasks:
+                task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
+                task_hidden_states = hidden_states[task_indices]
+                task_hidden_states = self.dense(task_hidden_states, task_id=task_id)
+                hidden_states[task_indices] = task_hidden_states
 
         hidden_states = self.intermediate_act_fn(hidden_states)
         return hidden_states
@@ -390,13 +393,14 @@ class JinaEmbeddingsV3Output(nn.Module):
         input_tensor: torch.Tensor,
         adapter_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        unique_tasks = torch.unique(adapter_mask)
         hidden_states = self.dense(hidden_states)
-        for task_id in unique_tasks:
-            task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
-            task_hidden_states = hidden_states[task_indices]
-            task_hidden_states = self.dense(task_hidden_states, task_id=task_id)
-            hidden_states[task_indices] = task_hidden_states
+        if adapter_mask is not None:
+            unique_tasks = torch.unique(adapter_mask)
+            for task_id in unique_tasks:
+                task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
+                task_hidden_states = hidden_states[task_indices]
+                task_hidden_states = self.dense(task_hidden_states, task_id=task_id)
+                hidden_states[task_indices] = task_hidden_states
 
         hidden_states = self.dropout(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
