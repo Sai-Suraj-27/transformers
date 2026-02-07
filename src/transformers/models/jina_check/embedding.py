@@ -78,7 +78,7 @@ class XLMRobertaEmbeddings(nn.Module):
                 embeddings[task_indices] = task_embeddings
         else:
             embeddings = self.word_embeddings(input_ids)
-        
+
         if self.max_position_embeddings > 0:
             if position_ids is None:
                 position_ids = create_position_ids_from_input_ids(
@@ -86,7 +86,7 @@ class XLMRobertaEmbeddings(nn.Module):
                 ).to(input_ids.device)
             position_embeddings = self.position_embeddings(position_ids)
             embeddings = embeddings + position_embeddings
-        
+
         if self.type_vocab_size > 0:
             if token_type_ids is None:
                 token_type_ids = torch.zeros(
@@ -106,5 +106,5 @@ class XLMRobertaEmbeddings(nn.Module):
             else:
                 token_type_embeddings = self.token_type_embeddings(token_type_ids)
                 embeddings = embeddings + token_type_embeddings
-        
+
         return embeddings

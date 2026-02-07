@@ -300,11 +300,6 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
         self.scaling = self.attention_head_size**-0.5
 
         self.Wqkv = nn.Linear(config.hidden_size, 3 * self.attention_head_size * config.num_attention_heads)
-
-        # self.query = nn.Linear(config.hidden_size, self.all_head_size)
-        # self.key = nn.Linear(config.hidden_size, self.all_head_size)
-        # self.value = nn.Linear(config.hidden_size, self.all_head_size)
-
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     def forward(
@@ -362,7 +357,7 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
         return attn_output, attn_weights
 
 
-class JinaEmbeddingsV3SelfOuput(nn.Module):
+class JinaEmbeddingsV3SelfOutput(nn.Module):
     def __init__(self, config: JinaEmbeddingsV3Config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
@@ -392,7 +387,7 @@ class JinaEmbeddingsV3Attention(nn.Module):
     def __init__(self, config: JinaEmbeddingsV3Config):
         super().__init__()
         self.attention_class = JinaEmbeddingsV3SelfAttention(config)
-        self.output = JinaEmbeddingsV3SelfOuput(config)
+        self.output = JinaEmbeddingsV3SelfOutput(config)
 
     def forward(
         self,

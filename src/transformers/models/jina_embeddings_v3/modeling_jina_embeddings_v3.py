@@ -4,6 +4,7 @@
 #             the file from the modular. If any change should be done, please apply the change to the
 #                          modular_jina_embeddings_v3.py file directly. One of our CI enforces this.
 #                🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨
+from hypothesis.internal.charmap import query
 import math
 from collections.abc import Callable
 from functools import partial
@@ -56,9 +57,22 @@ class JinaEmbeddingsV3Embeddings(nn.Module):
             input_shape = inputs_embeds.size()[:-1]
             device = inputs_embeds.device
 
+        if token_type_ids is None:
+            if hasattr(self, "token_type_ids"):
+                buffered_token_type_ids = self.token_type_ids.expand(input_shape[0], -1)
+                buffered_token_type_ids = torch.gather(buffered_token_type_ids, dim=1, index=position_ids)
+                token_type_ids = buffered_token_type_ids
+            else:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+
         if inputs_embeds is None:
-            embeddings = self.word_embeddings(input_ids)
             if adapter_mask is not None:
+                embeddings = torch.empty(
+                    *input_shape,
+                    self.word_embeddings.embedding_dim,
+                    dtype=self.word_embeddings.weight.dtype,
+                    device=device
+                )
                 unique_tasks = torch.unique(adapter_mask)
                 for task_id in unique_tasks:
                     task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
@@ -68,27 +82,26 @@ class JinaEmbeddingsV3Embeddings(nn.Module):
         else:
             embeddings = inputs_embeds
 
-        if token_type_ids is None:
-            if hasattr(self, "token_type_ids"):
-                buffered_token_type_ids = self.token_type_ids.expand(input_shape[0], -1)
-                buffered_token_type_ids = torch.gather(buffered_token_type_ids, dim=1, index=position_ids)
-                token_type_ids = buffered_token_type_ids
-            else:
-                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
-        token_type_embeddings = self.token_type_embeddings(token_type_ids)
-
         if adapter_mask is not None:
+            token_type_embeddings = torch.empty(
+                *input_shape,
+                self.token_type_embeddings.embedding_dim,
+                dtype=self.token_type_embeddings.weight.dtype,
+                device=device,
+            )
             unique_tasks = torch.unique(adapter_mask)
             for task_id in unique_tasks:
                 task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
                 task_token_type_ids = token_type_ids[task_indices]
-                task_token_type_embeddings = self.token_type_embeddings(token_type_ids, task_id=task_id)
-                token_type_embeddings[task_token_type_ids] = task_token_type_embeddings
+                task_token_type_embeddings = self.token_type_embeddings(task_token_type_ids, task_id=task_id)
+                token_type_embeddings[task_indices] = task_token_type_embeddings
+        else:
+            token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
         embeddings = embeddings + token_type_embeddings
-
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
+
         return embeddings
 
 
@@ -238,11 +251,6 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
         self.scaling = self.attention_head_size**-0.5
 
         self.Wqkv = nn.Linear(config.hidden_size, 3 * self.attention_head_size * config.num_attention_heads)
-
-        # self.query = nn.Linear(config.hidden_size, self.all_head_size)
-        # self.key = nn.Linear(config.hidden_size, self.all_head_size)
-        # self.value = nn.Linear(config.hidden_size, self.all_head_size)
-
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     def forward(
@@ -253,22 +261,25 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
         adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
     ):
-        input_shape = hidden_states.shape[:-1]
-        hidden_shape = (*input_shape, 3, -1, self.attention_head_size)
-
-        qkv = self.Wqkv(hidden_states).view(hidden_shape)
-        query_states, key_states, value_states = qkv.unbind(dim=-3)
-
-        query_states = query_states.transpose(1, 2)
-        key_states = key_states.transpose(1, 2)
-        value_states = value_states.transpose(1, 2)
+        batch_size, seq_len = hidden_states.shape[:-1]
+        out_shape = (batch_size, self.num_attention_heads, seq_len, self.attention_head_size)
+        hidden_shape = (batch_size, seq_len, 3, self.num_attention_heads, self.attention_head_size)
 
         if adapter_mask is not None:
+            query_states= torch.empty(out_shape, dtype=hidden_states.dtype, device=hidden_states.device)
+            key_states = torch.empty(out_shape, dtype=hidden_states.dtype, device=hidden_states.device)
+            value_states = torch.empty(out_shape, dtype=hidden_states.dtype, device=hidden_states.device)
+
             unique_tasks = torch.unique(adapter_mask)
             for task_id in unique_tasks:
                 task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
                 task_hidden_states = hidden_states[task_indices]
-                task_qkv_states = self.Wqkv(task_hidden_states, task_id=task_id).view(hidden_shape)
+                task_qkv_states = self.Wqkv(task_hidden_states, task_id=task_id)
+
+                task_batch_size = task_indices.shape[0]
+                task_view_shape = (task_batch_size, seq_len, 3, self.num_attention_heads, self.attention_head_size)
+                task_qkv_states = task_qkv_states.view(task_view_shape)
+
                 task_query_states, task_key_states, task_value_states = task_qkv_states.unbind(dim=-3)
 
                 task_query_states = task_query_states.transpose(1, 2)
@@ -278,6 +289,14 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
                 query_states[task_indices] = task_query_states
                 key_states[task_indices] = task_key_states
                 value_states[task_indices] = task_value_states
+        else:
+            qkv = self.Wqkv(hidden_states).view(hidden_shape)
+            query_states, key_states, value_states = qkv.unbind(dim=-3)
+
+            query_states = query_states.transpose(1, 2)
+            key_states = key_states.transpose(1, 2)
+            value_states = value_states.transpose(1, 2)
+
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -300,7 +319,7 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
         return attn_output, attn_weights
 
 
-class JinaEmbeddingsV3SelfOuput(nn.Module):
+class JinaEmbeddingsV3SelfOutput(nn.Module):
     def __init__(self, config: JinaEmbeddingsV3Config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
@@ -313,14 +332,24 @@ class JinaEmbeddingsV3SelfOuput(nn.Module):
         input_tensor: torch.Tensor,
         adapter_mask: torch.Tensor | None = None,
     ):
-        hidden_states = self.dense(hidden_states)
         if adapter_mask is not None:
+            output_dim = self.dense.out_features
+            output_tensor = torch.empty(
+                *hidden_states.shape[:-1], output_dim,
+                dtype=hidden_states.dtype,
+                device=hidden_states.device
+            )
+
             unique_tasks = torch.unique(adapter_mask)
             for task_id in unique_tasks:
                 task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
                 task_hidden_states = hidden_states[task_indices]
                 task_hidden_states = self.dense(task_hidden_states, task_id=task_id)
-                hidden_states[task_indices] = task_hidden_states
+                output_tensor[task_indices] = task_hidden_states
+
+            hidden_states = output_tensor
+        else:
+            hidden_states = self.dense(hidden_states)
 
         hidden_states = self.dropout(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
@@ -331,7 +360,7 @@ class JinaEmbeddingsV3Attention(nn.Module):
     def __init__(self, config: JinaEmbeddingsV3Config):
         super().__init__()
         self.attention_class = JinaEmbeddingsV3SelfAttention(config)
-        self.output = JinaEmbeddingsV3SelfOuput(config)
+        self.output = JinaEmbeddingsV3SelfOutput(config)
 
     def forward(
         self,
@@ -366,15 +395,25 @@ class JinaEmbeddingsV3Intermediate(nn.Module):
         hidden_states: torch.Tensor,
         adapter_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        hidden_states = self.dense(hidden_states)
-
         if adapter_mask is not None:
+            output_dim = self.dense.out_features
+            output_tensor = torch.empty(
+                *hidden_states.shape[:-1],
+                output_dim,
+                dtype=hidden_states.dtype, 
+                device=hidden_states.device
+            )
+
             unique_tasks = torch.unique(adapter_mask)
             for task_id in unique_tasks:
                 task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
                 task_hidden_states = hidden_states[task_indices]
                 task_hidden_states = self.dense(task_hidden_states, task_id=task_id)
-                hidden_states[task_indices] = task_hidden_states
+                output_tensor[task_indices] = task_hidden_states 
+
+            hidden_states = output_tensor
+        else:
+            hidden_states = self.dense(hidden_states)
 
         hidden_states = self.intermediate_act_fn(hidden_states)
         return hidden_states
@@ -393,14 +432,24 @@ class JinaEmbeddingsV3Output(nn.Module):
         input_tensor: torch.Tensor,
         adapter_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        hidden_states = self.dense(hidden_states)
+
         if adapter_mask is not None:
+            output_tensor = torch.empty(
+                *hidden_states.shape[:-1], self.dense.out_features,
+                dtype=hidden_states.dtype,
+                device=hidden_states.device
+            )
+
             unique_tasks = torch.unique(adapter_mask)
             for task_id in unique_tasks:
                 task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
                 task_hidden_states = hidden_states[task_indices]
                 task_hidden_states = self.dense(task_hidden_states, task_id=task_id)
-                hidden_states[task_indices] = task_hidden_states
+                output_tensor[task_indices] = task_hidden_states
+
+            hidden_states = output_tensor
+        else:
+            hidden_states = self.dense(hidden_states)
 
         hidden_states = self.dropout(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
@@ -478,18 +527,34 @@ class JinaEmbeddingsV3Pooler(nn.Module):
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.activation = nn.Tanh()
 
-    def forward(self, hidden_states: torch.Tensor, pool: bool = True, adapter_mask: torch.Tensor | None = None):
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        pool: bool = True,
+        adapter_mask: torch.Tensor | None = None
+    ):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
-        first_token_tensor = hidden_states[:, 0] if pool else hidden_states
-        pooled_output = self.dense(first_token_tensor)
+        first_token_tensor = hidden_states[:, 0, :] if pool else hidden_states
+
         if adapter_mask is not None:
+            output_tensor = torch.empty(
+                *first_token_tensor.shape[:-1],
+                self.dense.out_features,
+                dtype=hidden_states.dtype,
+                device=hidden_states.device
+            )
+
             unique_tasks = torch.unique(adapter_mask)
             for task_id in unique_tasks:
                 task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
                 task_first_token_tensor = first_token_tensor[task_indices]
                 task_pooled_output = self.dense(task_first_token_tensor, task_id=task_id)
-                pooled_output[task_indices] = task_pooled_output
+                output_tensor[task_indices] = task_pooled_output
+
+            pooled_output = output_tensor
+        else:
+            pooled_output = self.dense(first_token_tensor)
 
         pooled_output = self.activation(pooled_output)
         return pooled_output
