@@ -360,7 +360,11 @@ class JinaEmbeddingsV3Intermediate(nn.Module):
         else:
             self.intermediate_act_fn = config.hidden_act
 
-    def forward(self, hidden_states: torch.Tensor, adapter_mask: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        adapter_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         unique_tasks = torch.unique(adapter_mask)
         hidden_states = self.dense(hidden_states)
         for task_id in unique_tasks:
@@ -412,21 +416,23 @@ class JinaEmbeddingsV3Layer(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: torch.FloatTensor | None = None,
         position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
+        adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
     ):
         attention_output = self.attention(
             hidden_states,
             attention_mask,
             position_embeddings,
+            adapter_mask,
             **kwargs,
         )
 
-        layer_output = self.feed_forward_chunk(attention_output)
+        layer_output = self.feed_forward_chunk(attention_output, adapter_mask)
         return layer_output
 
-    def feed_forward_chunk(self, attention_output):
-        intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
+    def feed_forward_chunk(self, attention_output, adapter_mask):
+        intermediate_output = self.intermediate(attention_output, adapter_mask)
+        layer_output = self.output(intermediate_output, attention_output, adapter_mask)
         return layer_output
 
 
