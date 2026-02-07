@@ -316,7 +316,7 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
             scaling=self.scaling,
             **kwargs,
         )
-        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        attn_output = attn_output.reshape(batch_size, seq_len, -1).contiguous()
         return attn_output, attn_weights
 
 
