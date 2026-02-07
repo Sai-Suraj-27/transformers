@@ -78,6 +78,8 @@ class JinaEmbeddingsV3Embeddings(nn.Module):
                     task_input_ids = input_ids[task_indices]
                     task_embeddings = self.word_embeddings(task_input_ids, task_id=task_id)
                     embeddings[task_indices] = task_embeddings
+            else:
+                embeddings = self.word_embeddings(input_ids)
         else:
             embeddings = inputs_embeds
 
