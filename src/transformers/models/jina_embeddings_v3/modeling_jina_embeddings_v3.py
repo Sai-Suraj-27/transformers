@@ -870,7 +870,7 @@ class JinaEmbeddingsV3Model(nn.Module):
             **kwargs,
         )
         sequence_output = encoder_outputs.last_hidden_state
-        pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
+        pooled_output = self.pooler(sequence_output, pool=True, adapter_mask=adapter_mask) if self.pooler is not None else None
 
         return BaseModelOutputWithPooling(
             last_hidden_state=sequence_output,
