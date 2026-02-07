@@ -423,7 +423,7 @@ class JinaEmbeddingsV3Layer(nn.Module):
         adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
     ):
-        attention_output = self.attention(
+        attention_output, attn_weights = self.attention(
             hidden_states,
             attention_mask,
             position_embeddings,
