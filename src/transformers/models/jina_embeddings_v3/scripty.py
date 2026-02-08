@@ -39,12 +39,34 @@ JinaEmbeddingsV3Config = AutoConfig.from_pretrained("jinaai/jina-embeddings-v3",
 #         print(key, "       ", model_jina.state_dict()[key].shape)
 #
 
+rename = {
+    "embeddings.LayerNorm":"roberta.emb_ln",
+    "embeddings":"roberta.embeddings",
+    "encoder.layer":"roberta.encoder.layers",
+    "attention.attention_class.Wqkv":"mixer.Wqkv",
+    "attention.output.dense":"mixer.out_proj",
+    "attention.output.LayerNorm":"norm1",
+    "intermediate.dense":"mlp.fc1",
+    "output.dense":"mlp.fc2",
+    "output.LayerNorm":"norm2",
+    "pooler":"roberta.pooler",
+}
+
 
 model = JinaEmbeddingsV3Model(JinaEmbeddingsV3Config)
 
 for key in model.state_dict().keys():
-    if ("layer.0" in key) or ("embeddings" in key) or ("pooler" in key):
-        print(key, "       ", model.state_dict()[key].shape)
+    for rename_key, rename_value in rename.items():
+        # breakpoint()
+        if rename_key in key:
+            key = key.replace(rename_key, rename_value, 1)
+
+    print(key)
+
+    # print(key, "       ", model.state_dict()[key].shape)
+
+    # if ("layer.0" in key) or ("embeddings" in key) or ("pooler" in key):
+        # print(key, "       ", model.state_dict()[key].shape)
 
 
 
