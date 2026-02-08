@@ -1,5 +1,4 @@
 from functools import partial
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -8,6 +7,7 @@ from torch import Tensor
 from .mha import MHA
 from .mlp import Mlp
 from .stochastic_depth import StochasticDepth
+
 
 try:
     from flash_attn.ops.triton.layer_norm import RMSNorm, layer_norm_fn
@@ -105,7 +105,7 @@ class Block(nn.Module):
     def forward(
         self,
         hidden_states: Tensor,
-        residual: Optional[Tensor] = None,
+        residual: Tensor | None = None,
         mixer_subset=None,
         mixer_kwargs=None,
     ):
@@ -341,8 +341,8 @@ class ParallelBlock(nn.Module):
     def forward(
         self,
         hidden_states1: Tensor,
-        hidden_states2: Optional[Tensor] = None,
-        residual: Optional[Tensor] = None,
+        hidden_states2: Tensor | None = None,
+        residual: Tensor | None = None,
         mixer_kwargs=None,
     ):
         r"""Pass the input through the encoder layer.

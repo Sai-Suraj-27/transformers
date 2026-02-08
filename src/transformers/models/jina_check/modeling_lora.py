@@ -1,7 +1,7 @@
 import math
 import os
+from collections.abc import Iterator
 from functools import partial
-from typing import Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -9,6 +9,7 @@ import torch.nn.utils.parametrize as parametrize
 from torch import nn
 from torch.nn import Parameter
 from torch.nn import functional as F
+
 from transformers import PretrainedConfig
 
 from .configuration_xlm_roberta import XLMRobertaFlashConfig
@@ -20,7 +21,7 @@ from .modeling_xlm_roberta import (
 
 
 def initialized_weights(
-    shape: Tuple[int], num_adaptations: int, init: str = "kaiming"
+    shape: tuple[int], num_adaptations: int, init: str = "kaiming"
 ) -> torch.Tensor:
     weight_data = []
     for _ in range(num_adaptations):
@@ -248,7 +249,7 @@ class XLMRobertaLoRA(XLMRobertaPreTrainedModel):
     def __init__(
         self,
         config: XLMRobertaFlashConfig,
-        roberta: Optional[XLMRobertaModel] = None,
+        roberta: XLMRobertaModel | None = None,
         add_pooling_layer: bool = True,
     ):
         super().__init__(config)
@@ -263,7 +264,7 @@ class XLMRobertaLoRA(XLMRobertaPreTrainedModel):
             or len(self._lora_adaptations) < 1
         ):
             raise ValueError(
-                f"`lora_adaptations` must be a list and contain at least one element"
+                "`lora_adaptations` must be a list and contain at least one element"
             )
         self._task_instructions = config.task_instructions
         if (
@@ -274,8 +275,8 @@ class XLMRobertaLoRA(XLMRobertaPreTrainedModel):
             )
         ):
             raise ValueError(
-                f"`task_instructions` must be a dict and contain the same number of elements "
-                f"as `lora_adaptations` with all keys in `task_instructions` present in `lora_adaptations`."
+                "`task_instructions` must be a dict and contain the same number of elements "
+                "as `lora_adaptations` with all keys in `task_instructions` present in `lora_adaptations`."
             )
         self._adaptation_map = {
             name: idx for idx, name in enumerate(self._lora_adaptations)
@@ -319,14 +320,14 @@ class XLMRobertaLoRA(XLMRobertaPreTrainedModel):
     @classmethod
     def from_pretrained(
         cls,
-        pretrained_model_name_or_path: Optional[Union[str, os.PathLike]],
+        pretrained_model_name_or_path: str | os.PathLike | None,
         *model_args,
-        config: Optional[Union[PretrainedConfig, str, os.PathLike]] = None,
-        cache_dir: Optional[Union[str, os.PathLike]] = None,
+        config: PretrainedConfig | str | os.PathLike | None = None,
+        cache_dir: str | os.PathLike | None = None,
         ignore_mismatched_sizes: bool = False,
         force_download: bool = False,
         local_files_only: bool = False,
-        token: Optional[Union[str, bool]] = None,
+        token: str | bool | None = None,
         revision: str = "main",
         use_safetensors: bool = None,
         **kwargs,
@@ -377,7 +378,7 @@ class XLMRobertaLoRA(XLMRobertaPreTrainedModel):
 
     def named_parameters(
         self, prefix: str = "", recurse: bool = True, remove_duplicate: bool = True
-    ) -> Iterator[Tuple[str, Parameter]]:
+    ) -> Iterator[tuple[str, Parameter]]:
         for name, param in super().named_parameters(
             prefix=prefix, recurse=recurse, remove_duplicate=remove_duplicate
         ):
@@ -387,11 +388,11 @@ class XLMRobertaLoRA(XLMRobertaPreTrainedModel):
     @torch.inference_mode()
     def encode(
         self,
-        sentences: Union[str, List[str]],
+        sentences: str | list[str],
         *args,
-        task: Optional[str] = None,
+        task: str | None = None,
         **kwargs,
-    ) -> Union[List[torch.Tensor], np.ndarray, torch.Tensor]:
+    ) -> list[torch.Tensor] | np.ndarray | torch.Tensor:
         """
         Computes sentence embeddings.
         sentences(`str` or `List[str]`):

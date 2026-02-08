@@ -1,28 +1,30 @@
 import math
-from functools import partial
 from collections.abc import Callable
+from functools import partial
+
 import torch
+import torch.nn.utils.parametrize as parametrize
 from torch import nn
 from torch.nn import functional as F
-import torch.nn.utils.parametrize as parametrize
+
+from ...integrations import use_kernelized_func
+from ...modeling_outputs import (
+    BaseModelOutputWithPooling,
+)
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
+from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, logging
 from ...utils.generic import check_model_inputs
-from ...processing_utils import Unpack
-from ...integrations import use_kernelized_func
+from ..llama.modeling_llama import LlamaRotaryEmbedding, apply_rotary_pos_emb
 from ..xlm_roberta.configuration_xlm_roberta import XLMRobertaConfig
-from ...configuration_utils import PreTrainedConfig
-from ..llama.modeling_llama import LlamaRotaryEmbedding, apply_rotary_pos_emb 
 from ..xlm_roberta.modeling_xlm_roberta import (
+    XLMRobertaIntermediate,
     XLMRobertaOutput,
     XLMRobertaPooler,
     XLMRobertaSelfOutput,
-    XLMRobertaIntermediate,
     eager_attention_forward,
 )
-from ...modeling_outputs import (
-    BaseModelOutputWithPooling,
-) 
+
 
 logger = logging.get_logger(__name__)
 
@@ -372,7 +374,7 @@ class JinaEmbeddingsV3Intermediate(XLMRobertaIntermediate):
             output_tensor = torch.empty(
                 *hidden_states.shape[:-1],
                 output_dim,
-                dtype=hidden_states.dtype, 
+                dtype=hidden_states.dtype,
                 device=hidden_states.device
             )
 
@@ -381,7 +383,7 @@ class JinaEmbeddingsV3Intermediate(XLMRobertaIntermediate):
                 task_indices = (adapter_mask == task_id).nonzero(as_tuple=True)[0]
                 task_hidden_states = hidden_states[task_indices]
                 task_hidden_states = self.dense(task_hidden_states, task_id=task_id)
-                output_tensor[task_indices] = task_hidden_states 
+                output_tensor[task_indices] = task_hidden_states
 
             hidden_states = output_tensor
         else:

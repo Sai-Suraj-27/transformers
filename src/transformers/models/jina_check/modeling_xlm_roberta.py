@@ -6,7 +6,6 @@ import re
 from collections import OrderedDict
 from collections.abc import Sequence
 from functools import partial
-from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -14,22 +13,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+
 from transformers import AutoTokenizer, PretrainedConfig
 from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.bert.modeling_bert import (
     BaseModelOutputWithPoolingAndCrossAttentions,
-    BertForPreTrainingOutput,
 )
 from transformers.models.xlm_roberta.modeling_xlm_roberta import XLMRobertaLMHead
 
-from .rotary import RotaryEmbedding
 from .block import Block
 from .configuration_xlm_roberta import XLMRobertaFlashConfig
 from .embedding import XLMRobertaEmbeddings
 from .mha import MHA
 from .mlp import FusedMLP, Mlp
 from .xlm_padding import index_first_axis_residual, pad_input, unpad_input
+
 
 try:
     from flash_attn.ops.fused_dense import FusedDense
@@ -193,7 +192,7 @@ class XLMRobertaEncoder(nn.Module):
         key_padding_mask=None,
         subset_mask=None,
         adapter_mask=None,
-        output_hidden_states: Optional[bool] = None,
+        output_hidden_states: bool | None = None,
     ):
         """If subset_mask is not None, we only want output for the subset of the sequence.
         This means that we only compute the last layer output for these tokens.
@@ -364,7 +363,7 @@ class XLMRobertaPreTrainedModel(PreTrainedModel):
         *args,
         **kwargs,
     ):
-        if not "torch_dtype" in kwargs:
+        if "torch_dtype" not in kwargs:
             kwargs["torch_dtype"] = "auto"
         return super().from_pretrained(*args, **kwargs)
 
@@ -411,19 +410,19 @@ class XLMRobertaModel(XLMRobertaPreTrainedModel):
     @torch.inference_mode()
     def encode(
         self: "XLMRobertaModel",
-        sentences: Union[str, List[str]],
+        sentences: str | list[str],
         batch_size: int = 32,
-        show_progress_bar: Optional[bool] = None,
+        show_progress_bar: bool | None = None,
         output_value: str = "sentence_embedding",
         convert_to_numpy: bool = True,
         convert_to_tensor: bool = False,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
         normalize_embeddings: bool = True,
-        truncate_dim: Optional[int] = None,
-        adapter_mask: Optional[torch.Tensor] = None,
-        task: Optional[str] = None,
+        truncate_dim: int | None = None,
+        adapter_mask: torch.Tensor | None = None,
+        task: str | None = None,
         **tokenizer_kwargs,
-    ) -> Union[List[torch.Tensor], np.ndarray, torch.Tensor]:
+    ) -> list[torch.Tensor] | np.ndarray | torch.Tensor:
         """
         Computes sentence embeddings
         Args:
@@ -734,19 +733,19 @@ class XLMRobertaForMaskedLM(XLMRobertaPreTrainedModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        head_mask: Optional[torch.FloatTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        encoder_hidden_states: Optional[torch.FloatTensor] = None,
-        encoder_attention_mask: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[Tuple[torch.Tensor], MaskedLMOutput]:
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.FloatTensor | None = None,
+        token_type_ids: torch.LongTensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        head_mask: torch.FloatTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        encoder_hidden_states: torch.FloatTensor | None = None,
+        encoder_attention_mask: torch.FloatTensor | None = None,
+        labels: torch.LongTensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+    ) -> tuple[torch.Tensor] | MaskedLMOutput:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should be in `[-100, 0, ...,
@@ -1106,17 +1105,17 @@ class XLMRobertaForSequenceClassification(XLMRobertaPreTrainedModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        head_mask: Optional[torch.FloatTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[Tuple[torch.Tensor], SequenceClassifierOutput]:
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.FloatTensor | None = None,
+        token_type_ids: torch.LongTensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        head_mask: torch.FloatTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        labels: torch.LongTensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+    ) -> tuple[torch.Tensor] | SequenceClassifierOutput:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
             Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,

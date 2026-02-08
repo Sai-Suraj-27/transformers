@@ -3,14 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributed import ProcessGroup
 
+
 try:
     from flash_attn.ops.activations import swiglu
 except ImportError:
     swiglu = None
 
 try:
-    from flash_attn.ops.fused_dense import (ColumnParallelLinear,
-                                            RowParallelLinear)
+    from flash_attn.ops.fused_dense import ColumnParallelLinear, RowParallelLinear
 except ImportError:
     ColumnParallelLinear, RowParallelLinear = None, None
 

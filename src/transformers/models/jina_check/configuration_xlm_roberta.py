@@ -1,6 +1,7 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import torch
+
 from transformers import PretrainedConfig
 
 
@@ -29,20 +30,20 @@ class XLMRobertaFlashConfig(PretrainedConfig):
         rotary_emb_base: float = 10000.0,
         use_cache: bool = True,
         use_reentrant: bool = False,
-        classifier_dropout: Optional[float] = None,
-        lora_adaptations: Optional[List[str]] = None,
-        task_instructions: Optional[Dict[str, str]] = None,
+        classifier_dropout: float | None = None,
+        lora_adaptations: list[str] | None = None,
+        task_instructions: dict[str, str] | None = None,
         lora_rank: int = 4,
         lora_dropout_p: float = 0.0,
         lora_alpha: int = 1,
         lora_main_params_trainable: bool = False,
         load_trained_adapters: bool = False,
         use_flash_attn: bool = True,
-        torch_dtype: Optional[Union[str, torch.dtype]] = None,
-        emb_pooler: Optional[str] = None,
-        matryoshka_dimensions: Optional[List[int]] = None,
-        truncate_dim: Optional[int] = None,
-        **kwargs: Dict[str, Any],
+        torch_dtype: str | torch.dtype | None = None,
+        emb_pooler: str | None = None,
+        matryoshka_dimensions: list[int] | None = None,
+        truncate_dim: int | None = None,
+        **kwargs: dict[str, Any],
     ):
         """
         Initialize the XLMRobertaFlashConfig configuration.

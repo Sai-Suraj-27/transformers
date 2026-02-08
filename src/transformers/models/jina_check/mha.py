@@ -5,20 +5,22 @@ import torch
 import torch.nn as nn
 from einops import rearrange, repeat
 
+
 try:
-    from flash_attn import (flash_attn_kvpacked_func,
-                            flash_attn_qkvpacked_func,
-                            flash_attn_varlen_kvpacked_func,
-                            flash_attn_varlen_qkvpacked_func,
-                            flash_attn_with_kvcache)
+    from flash_attn import (
+        flash_attn_kvpacked_func,
+        flash_attn_qkvpacked_func,
+        flash_attn_varlen_kvpacked_func,
+        flash_attn_varlen_qkvpacked_func,
+        flash_attn_with_kvcache,
+    )
 except ImportError:
     flash_attn_varlen_qkvpacked_func, flash_attn_varlen_kvpacked_func = None, None
     flash_attn_qkvpacked_func, flash_attn_kvpacked_func = None, None
     flash_attn_with_kvcache = None
 
 try:
-    from flash_attn.ops.fused_dense import (ColumnParallelLinear, FusedDense,
-                                            RowParallelLinear)
+    from flash_attn.ops.fused_dense import ColumnParallelLinear, FusedDense, RowParallelLinear
 except ImportError:
     FusedDense, ColumnParallelLinear, RowParallelLinear = None, None, None
 

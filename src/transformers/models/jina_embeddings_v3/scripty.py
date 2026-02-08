@@ -1,9 +1,11 @@
-import torch
 # from transformers import AutoTokenizer
 # from .modeling_jina_embeddings_v3 import JinaEmbeddingsV3Model
-from .modular_jina_embeddings_v3 import JinaEmbeddingsV3Model
 # from .configuration_jina_embeddings_v3 import JinaEmbeddingsV3Config
 from transformers import AutoConfig
+
+from .modular_jina_embeddings_v3 import JinaEmbeddingsV3Model
+
+
 # from ..jina_check.modeling_lora import XLMRobertaLoRA
 # from ..jina_check.modeling_xlm_roberta import XLMRobertaModel
 # from ..jina_check.configuration_xlm_roberta import XLMRobertaFlashConfig
