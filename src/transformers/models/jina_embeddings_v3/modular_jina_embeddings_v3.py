@@ -13,7 +13,7 @@ from ...processing_utils import Unpack
 from ...integrations import use_kernelized_func
 from ..xlm_roberta.configuration_xlm_roberta import XLMRobertaConfig
 from ...configuration_utils import PreTrainedConfig
-from ..llama.modeling_llama import LlamaRotaryEmbedding, rotate_half, apply_rotary_pos_emb 
+from ..llama.modeling_llama import LlamaRotaryEmbedding, apply_rotary_pos_emb 
 from ..xlm_roberta.modeling_xlm_roberta import (
     XLMRobertaOutput,
     XLMRobertaPooler,
