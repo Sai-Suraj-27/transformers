@@ -6,7 +6,6 @@ from torch import nn
 from torch.nn import functional as F
 import torch.nn.utils.parametrize as parametrize
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
-from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ...utils import TransformersKwargs, auto_docstring, logging
 from ...utils.generic import check_model_inputs
 from ...processing_utils import Unpack
@@ -25,10 +24,7 @@ from ...modeling_outputs import (
     BaseModelOutputWithPooling,
 ) 
 
-
 logger = logging.get_logger(__name__)
-
-
 
 # Tokenizer: `XLM-RoBERTa` tokenizer
 # Model Architecture: Based on `jina-XLM-RoBERTa` model, with 5 LoRA adapters for 4 different tasks.
@@ -47,10 +43,7 @@ logger = logging.get_logger(__name__)
 # Note that the API does not first generate a generic meta embedding and then adapt it with an additional fine-tuned MLP.
 # the task-specific LoRA adapter into every transformer layer (a total of 24 layers) and performs the encoding in one shot
 
-
 # task, dimensions, and late_chunking.
-
-
 
 # XLMRobertaLoRA
 #   - XLMRobertaModel
@@ -284,7 +277,6 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
             query_states = query_states.transpose(1, 2)
             key_states = key_states.transpose(1, 2)
             value_states = value_states.transpose(1, 2)
-
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
