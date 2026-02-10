@@ -11,7 +11,8 @@ from ...integrations import use_kernelized_func
 from ...modeling_outputs import (
     BaseModelOutputWithPooling,
 )
-from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
+from ...modeling_rope_utils import RopeParameters
+from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel, PreTrainedConfig
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, logging
 from ...utils.generic import check_model_inputs
@@ -31,105 +32,213 @@ logger = logging.get_logger(__name__)
 # Tokenizer: `XLM-RoBERTa` tokenizer
 # Model Architecture: Based on `jina-XLM-RoBERTa` model, with 5 LoRA adapters for 4 different tasks.
 
-# 5 task-specific LoRA adapters are introduced to optimize embeddings for 4 tasks.
-# retrieval.query
-# retrieval.passage
-# separation
-# classification
-# text-matching
-
-
-# The task parameter is crucial and must be set according to the downstream task.
-# The resulting embeddings will be optimized for that specific task.
-
-# Note that the API does not first generate a generic meta embedding and then adapt it with an additional fine-tuned MLP.
-# the task-specific LoRA adapter into every transformer layer (a total of 24 layers) and performs the encoding in one shot
-
-# task, dimensions, and late_chunking.
-
 # XLMRobertaLoRA
 #   - XLMRobertaModel
 #       - XLMRobertaPreTrainedModel
 #           - PreTrainedModel
 
 
-class JinaEmbeddingsV3Config(XLMRobertaConfig):
+# PreTrainedConfig Class
+#   - config.json in JinaEmbeddingsV3 vs Jina-ai's Flash-attn based XLM Roberta
+#   - How to perfectly add JinaEmbeddingsV3Config.
+
+
+# Class LORA Parametrizations
+#   - Understand this class.
+#   - initialized_weights
+#   - extra arguments (Are they needed? Can I remove them?)
+#  self.config.lora_main_params_trainable?? WTH is this? Is this even needed?
+
+# set_input_embeddings, get_input_embeddings? Are these needed? What's the use?
+# get_extended_attention_mask? How to use directly, instead of adding it as a method?
+# BaseModelOutputWithPooling? Which one of these exactly should I use & why?
+# BaseModelOutputWithPooling? Based on this, how to return the required values.
+# PreTrainedModel Class
+#   - What is this? Where should I use this? How should I use this?
+# Test the modeling layer by loding weights with my implementation vs Actual JinaAI Model outputs.
+# Add the encode method
+# What extra modeling classes should be added for this model? Should they inherit from PreTrainedModel or JinaEV3PreTrainedModel?
+# Auto configs..something?
+#   - What about Tokenizer? Where are we defining that? Just in the auto config thing is enough?
+#   - Exactly same as XLMRoberta Tokenizer? All pad,bos,eos id's and all also?
+#   - Then what about the tokenizer.json / special_tokens_map.json / tokenizer_config.json ? What are all these?
+# What is this stochastic_depth.py file? Where is it even used and purpose/use of it? Should I use it for the implementation anywhere?
+# What is this xlm_padding.py file? Where is it even used & Purpose/use of it? Should I use it for the implementation anywhere?
+# Tests for the model
+# Documentation for the model.
+# When exactly the remote_code=True can be ignored? Like if the transformers library adds the model to itself then only? or when exactly?
+
+
+
+class JinaEmbeddingsV3Config(PreTrainedConfig):
+    r"""
+    This is the configuration class to store the configuration of a [`JinaEmbeddingsV3Model`]. It
+    is used to instantiate a Jina-Embeddings-V3 model according to the specified arguments, defining the model architecture.
+    Instantiating a configuration with the defaults will yield a similar configuration to that of the Jina-Embeddings-V3
+    [jinaai/jina-embeddings-v3](https://huggingface.co/jinaai/jina-embeddings-v3) architecture.
+
+    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
+    documentation from [`PreTrainedConfig`] for more information.
+
+
+    Args:
+        vocab_size (`int`, *optional*, defaults to 250002):
+            Vocabulary size of the Jina-Embeddings-V3 model. Defines the number of different tokens that can be represented by
+            the `inputs_ids` passed when calling [`JinaEmbeddingsV3Model'`].
+        hidden_size (`int`, *optional*, defaults to 1024):
+            Dimensionality of the encoder layers and the pooler layer.
+        num_hidden_layers (`int`, *optional*, defaults to 24):
+            Number of hidden layers in the Transformer encoder.
+        num_attention_heads (`int`, *optional*, defaults to 16):
+            Number of attention heads for each attention layer in the Transformer encoder.
+        intermediate_size (`int`, *optional*, defaults to 4096):
+            Dimensionality of the "intermediate" (often named feed-forward) layer in the Transformer encoder.
+        hidden_act (`str` or `Callable`, *optional*, defaults to `"gelu"`):
+            The non-linear activation function (function or string) in the encoder and pooler. If string, `"gelu"`,
+            `"relu"`, `"silu"` and `"gelu_new"` are supported.
+        hidden_dropout_prob (`float`, *optional*, defaults to 0.1):
+            The dropout probability for all fully connected layers in the embeddings, encoder, and pooler.
+        attention_probs_dropout_prob (`float`, *optional*, defaults to 0.1):
+            The dropout ratio for the attention probabilities.
+        max_position_embeddings (`int`, *optional*, defaults to 8194):
+            The maximum sequence length that this model might ever be used with. Typically set this to something large
+            just in case (e.g.,  2048 or 4096 or 8194).
+        type_vocab_size (`int`, *optional*, defaults to 1):
+            The vocabulary size of the `token_type_ids` passed when calling [`JinaEmbeddingsV3Model`].
+        initializer_range (`float`, *optional*, defaults to 0.02):
+            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
+        layer_norm_eps (`float`, *optional*, defaults to 1e-5):
+            The epsilon used by the layer normalization layers.
+        pad_token_id (`int`, *optional*, defaults to 1):
+            Padding token id.
+        bos_token_id (`int`, *optional*, defaults to 0):
+            Beginning of stream token id.
+        eos_token_id (`int`, *optional*, defaults to 2):
+            End of stream token id.
+        position_embedding_type (`str`, *optional*, defaults to `"rotary"`):
+            The type of position embedding to use in the model.
+        rope_parameters (`RopeParameters`, *optional*):
+            Dictionary containing the configuration parameters for the RoPE embeddings. The dictionary should contain
+            a value for `rope_theta` and optionally parameters used for scaling in case you want to use RoPE
+            with longer `max_position_embeddings`.
+        classifier_dropout (`float`, *optional*):
+            The dropout ratio for the classification head.
+        lora_adaptations (`list[str]`, *optional*):
+            List of task-specific LoRA adaptation names. Defaults to
+            `["retrieval.query", "retrieval.passage", "separation", "classification", "text-matching"]`.
+        task_instructions (`dict[str, str]`, *optional*):
+            Dictionary mapping task names to their instruction prompts.
+        lora_rank (`int`, *optional*, defaults to 4):
+            The rank of the LoRA adaptation matrices.
+        lora_dropout_p (`float`, *optional*, defaults to 0.0):
+            Dropout probability for LoRA layers.
+        lora_alpha (`int`, *optional*, defaults to 1):
+            Scaling factor for LoRA adaptations.
+        load_trained_adapters (`bool`, *optional*, defaults to `True`):
+            Whether to load trained adapter weights.
+        matryoshka_dimensions (`list[int]`, *optional*):
+            List of supported dimensions for matryoshka representation learning.
+        truncate_dim (`int`, *optional*):
+            Dimension to truncate embeddings to.
+
+    Examples:
+
+    ```python
+    >>> from transformers import JinaEmbeddingsV3Config, JinaEmbeddingsV3Model
+
+    >>> # Initializing a Jina-Embeddings-V3 jinaai/jina-embeddings-v3 style configuration
+    >>> configuration = JinaEmbeddingsV3Config()
+
+    >>> # Initializing a model (with random weights) from the jinaai/jina-embeddings-v3 style configuration
+    >>> model = JinaEmbeddingsV3Model(configuration)
+
+    >>> # Accessing the model configuration
+    >>> configuration = model.config
+    ```"""
+
     model_type = "jina_embeddings_v3"
 
     def __init__(
         self,
-        vocab_size=250002,
-        hidden_size=1024,
-        num_hidden_layers=24,
-        num_attention_heads=16,
-        intermediate_size=4096,
-        hidden_act="gelu",
-        hidden_dropout_prob=0.1,
-        attention_probs_dropout_prob=0.1,
-        max_position_embeddings=8194,
-        type_vocab_size=1,
-        initializer_range=0.02,
-        layer_norm_eps=1e-5,
-        pad_token_id=1,
-        bos_token_id=0,
-        eos_token_id=2,
-        position_embedding_type="rotary",
-        rotary_emb_base=20000.0,
-        classifier_dropout=None,
-        lora_adaptations=None,
-        task_instructions=None,
-        lora_rank=4,
-        lora_dropout_p=0.0,
-        lora_alpha=1,
-        lora_main_params_trainable=False,
-        load_trained_adapters=True,
-        matryoshka_dimensions=None,
-        emb_pooler=None,
+        vocab_size: int | None = 250002,
+        hidden_size: int | None = 1024,
+        num_hidden_layers: int | None = 24,
+        num_attention_heads: int | None = 16,
+        intermediate_size: int | None = 4096,
+        hidden_act: str | None = "gelu",
+        hidden_dropout_prob: float | None = 0.1,
+        attention_probs_dropout_prob: float | None = 0.1,
+        max_position_embeddings: int | None = 8194,
+        type_vocab_size: int | None = 1,
+        initializer_range: float | None = 0.02,
+        layer_norm_eps: float | None = 1e-5,
+        pad_token_id: int | None = 1,
+        bos_token_id: int | None = 0,
+        eos_token_id: int | None = 2,
+        position_embedding_type: str | None = "rotary",
+        rope_parameters: RopeParameters | dict | None = None,
+        classifier_dropout: float | None = None,
+        lora_adaptations: list[str] | None = None,
+        task_instructions: dict[str, str] | None = None,
+        lora_rank: int | None = 4,
+        lora_dropout_p: float | None = 0.0,
+        lora_alpha: int | None = 1,
+        load_trained_adapters: bool | None = True,
+        emb_pooler: str | None = None,
+        matryoshka_dimensions: list[int] | None = None,
+        truncate_dim: int | None = None,
         **kwargs,
     ):
+        if rope_parameters is None:
+            rope_parameters = {"rope_theta": 20000.0}
 
-        # 1. Set Defaults for mutable types (lists/dicts)
         if lora_adaptations is None:
             lora_adaptations = [
                 "retrieval.query", "retrieval.passage", "separation",
                 "classification", "text-matching"
             ]
+
+        if task_instructions is None:
+            task_instructions = {
+                "retrieval.query": "Represent the query for retrieving evidence documents: ",
+                "retrieval.passage": "Represent the document for retrieval: ",
+                "separation": "",
+                "classification": "",
+                "text-matching": ""
+            }
+
         if matryoshka_dimensions is None:
             matryoshka_dimensions = [32, 64, 128, 256, 512, 768, 1024]
 
-        # 2. Initialize the parent XLMRobertaConfig with standard BERT params
-        super().__init__(
-            vocab_size=vocab_size,
-            hidden_size=hidden_size,
-            num_hidden_layers=num_hidden_layers,
-            num_attention_heads=num_attention_heads,
-            intermediate_size=intermediate_size,
-            hidden_act=hidden_act,
-            hidden_dropout_prob=hidden_dropout_prob,
-            attention_probs_dropout_prob=attention_probs_dropout_prob,
-            max_position_embeddings=max_position_embeddings,
-            type_vocab_size=type_vocab_size,
-            initializer_range=initializer_range,
-            layer_norm_eps=layer_norm_eps,
-            pad_token_id=pad_token_id,
-            bos_token_id=bos_token_id,
-            eos_token_id=eos_token_id,
-            classifier_dropout=classifier_dropout,
-            **kwargs,
-        )
-
-        # 3. Assign the Jina-specific parameters
+        self.vocab_size=vocab_size
+        self.hidden_size=hidden_size
+        self.num_hidden_layers=num_hidden_layers
+        self.num_attention_heads=num_attention_heads
+        self.intermediate_size=intermediate_size
+        self.hidden_act=hidden_act
+        self.hidden_dropout_prob=hidden_dropout_prob
+        self.attention_probs_dropout_prob=attention_probs_dropout_prob
+        self.max_position_embeddings=max_position_embeddings
+        self.type_vocab_size=type_vocab_size
+        self.initializer_range=initializer_range
+        self.layer_norm_eps=layer_norm_eps
+        self.pad_token_id=pad_token_id
+        self.bos_token_id=bos_token_id
+        self.eos_token_id=eos_token_id
         self.position_embedding_type = position_embedding_type
-        self.rotary_emb_base = rotary_emb_base
+        self.rope_parameters = rope_parameters
+        self.classifier_dropout=classifier_dropout
         self.lora_adaptations = lora_adaptations
         self.lora_rank = lora_rank
         self.lora_alpha = lora_alpha
         self.lora_dropout_p = lora_dropout_p
-        self.lora_main_params_trainable = lora_main_params_trainable
         self.load_trained_adapters = load_trained_adapters
         self.matryoshka_dimensions = matryoshka_dimensions
         self.task_instructions = task_instructions
         self.emb_pooler = emb_pooler
+        self.truncate_dim = truncate_dim
+
+        super().__init__(**kwargs)
 
 
 class JinaEmbeddingsV3Embeddings(nn.Module):
@@ -283,6 +392,7 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
+        # `Jina Embeddings V3` config.json has flash_attn = True. So, does this cause any differences? Which one should i use?
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
             self.config._attn_implementation, eager_attention_forward
         )
@@ -728,10 +838,10 @@ class LoRAParametrization(nn.Module):
                     input,
                     weights,
                     self.padding_idx,
-                    # self.max_norm,
-                    # self.norm_type,
-                    # self.scale_grad_by_freq,
-                    # self.sparse,
+                    self.max_norm,
+                    self.norm_type,
+                    self.scale_grad_by_freq,
+                    self.sparse,
                 )
 
                 return out
@@ -788,12 +898,6 @@ class JinaEmbeddingsV3Model(nn.Module):
                 alpha=self.config.lora_alpha,
             )
         )
-
-        # Handle freezing/unfreezing main parameters
-        # if not self.config.lora_main_params_trainable:
-        #     for name, param in self.named_parameters():
-        #         if "lora" not in name:
-        #             param.requires_grad_(False)
 
     def get_input_embeddings(self):
         return self.embeddings.word_embeddings
