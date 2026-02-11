@@ -41,15 +41,12 @@ logger = logging.get_logger(__name__)
 # PreTrainedConfig Class
 #   - config.json in JinaEmbeddingsV3 vs Jina-ai's Flash-attn based XLM Roberta
 #   - How to perfectly add JinaEmbeddingsV3Config.
-
-
 # Class LORA Parametrizations
 #   - Understand this class.
 #   - initialized_weights
 #   - extra arguments (Are they needed? Can I remove them?)
-#  self.config.lora_main_params_trainable?? WTH is this? Is this even needed?
-
 # set_input_embeddings, get_input_embeddings? Are these needed? What's the use?
+
 # get_extended_attention_mask? How to use directly, instead of adding it as a method?
 # BaseModelOutputWithPooling? Which one of these exactly should I use & why?
 # BaseModelOutputWithPooling? Based on this, how to return the required values.
@@ -66,7 +63,6 @@ logger = logging.get_logger(__name__)
 # What is this xlm_padding.py file? Where is it even used & Purpose/use of it? Should I use it for the implementation anywhere?
 # Tests for the model
 # Documentation for the model.
-# When exactly the remote_code=True can be ignored? Like if the transformers library adds the model to itself then only? or when exactly?
 
 
 
@@ -652,24 +648,28 @@ def initialized_weights(shape: tuple[int], num_adaptations: int, init: str = "ka
     return torch.stack(weight_data, dim=0)
 
 
+"""
+This LoRA implementation was inspired by  https://github.com/cccntu/minLoRA
+The MIT License (MIT) Copyright (c) 2020 Andrej Karpathy
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+and associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+"""
 class LoRAParametrization(nn.Module):
     """
-    This LoRA implementation was inspired by  https://github.com/cccntu/minLoRA
-    The MIT License (MIT) Copyright (c) 2020 Andrej Karpathy
-    Permission is hereby granted, free of charge, to any person obtaining a copy of this software
-    and associated documentation files (the "Software"), to deal in the Software without restriction,
-    including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
-    and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
-    subject to the following conditions:
-    The above copyright notice and this permission notice shall be included in all copies or substantial
-    portions of the Software.
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    A Low-Rank Adaptation (LoRA) parametrization that can be attached to Linear and Embedding layers.
+    It supports multi-task adaptation by maintaining a stack of adapter weights (A and B matrices)
+    and selecting the appropriate one based on a `task_id` provided during the forward pass.
     """
-
     def __init__(
         self,
         fan_in: int,
@@ -850,7 +850,7 @@ class LoRAParametrization(nn.Module):
 
 
 @auto_docstring
-class JinaEmbeddingsV3Model(nn.Module):
+class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
     _no_split_modules = ["JinaEmbeddingsV3Embeddings", "JinaEmbeddingsV3Layer"]
 
     def __init__(self, config: JinaEmbeddingsV3Config, add_pooling_layer=True):
@@ -904,57 +904,6 @@ class JinaEmbeddingsV3Model(nn.Module):
 
     def set_input_embeddings(self, value):
         self.embeddings.word_embeddings = value
-
-
-    def get_extended_attention_mask(
-        self,
-        attention_mask: torch.Tensor,
-        input_shape: tuple[int, ...],
-        dtype: torch.dtype | None = None,
-    ) -> torch.Tensor:
-        """
-        Makes broadcastable attention and causal masks so that future and masked tokens are ignored.
-
-        Arguments:
-            attention_mask (`torch.Tensor`):
-                Mask with ones indicating tokens to attend to, zeros for tokens to ignore.
-            input_shape (`tuple[int]`):
-                The shape of the input to the model.
-
-        Returns:
-            `torch.Tensor` The extended attention mask, with a the same dtype as `attention_mask.dtype`.
-        """
-        if dtype is None:
-            dtype = self.dtype
-
-        # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
-        # ourselves in which case we just need to make it broadcastable to all heads.
-        if attention_mask.dim() == 3:
-            extended_attention_mask = attention_mask[:, None, :, :]
-        elif attention_mask.dim() == 2:
-            # Provided a padding mask of dimensions [batch_size, seq_length]
-            # - if the model is a decoder, apply a causal mask in addition to the padding mask
-            # - if the model is an encoder, make the mask broadcastable to [batch_size, num_heads, seq_length, seq_length]
-            if getattr(self.config, "is_decoder", None):
-                extended_attention_mask = ModuleUtilsMixin.create_extended_attention_mask_for_decoder(
-                    input_shape, attention_mask
-                )
-            else:
-                extended_attention_mask = attention_mask[:, None, None, :]
-        else:
-            raise ValueError(
-                f"Wrong shape for input_ids (shape {input_shape}) or attention_mask (shape {attention_mask.shape})"
-            )
-
-        # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
-        # masked positions, this operation will create a tensor which is 0.0 for
-        # positions we want to attend and the dtype's smallest value for masked positions.
-        # Since we are adding it to the raw scores before the softmax, this is
-        # effectively the same as removing these entirely.
-        extended_attention_mask = extended_attention_mask.to(dtype=dtype)  # fp16 compatibility
-        extended_attention_mask = (1.0 - extended_attention_mask) * torch.finfo(dtype).min
-        return extended_attention_mask
-
 
     @check_model_inputs
     def forward(
