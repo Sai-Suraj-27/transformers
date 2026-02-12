@@ -8,14 +8,14 @@ from torch import nn
 from torch.nn import functional as F
 
 from ...integrations import use_kernelized_func
-from ...modeling_outputs import (
-    BaseModelOutputWithPooling,
-)
+from ...modeling_outputs import BaseModelOutputWithPooling
 from ...modeling_rope_utils import RopeParameters
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel, PreTrainedConfig
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, logging
-from ...utils.generic import check_model_inputs
+from ...utils.generic import can_return_tuple, merge_with_config_defaults
+from ...modeling_layers import GradientCheckpointingLayer
+from ...utils.output_capturing import capture_outputs
 from ..llama.modeling_llama import LlamaRotaryEmbedding, apply_rotary_pos_emb
 from ..xlm_roberta.configuration_xlm_roberta import XLMRobertaConfig
 from ..xlm_roberta.modeling_xlm_roberta import (
@@ -46,14 +46,14 @@ logger = logging.get_logger(__name__)
 #   - initialized_weights
 #   - extra arguments (Are they needed? Can I remove them?)
 # set_input_embeddings, get_input_embeddings? Are these needed? What's the use?
-
 # get_extended_attention_mask? How to use directly, instead of adding it as a method?
+
+
 # BaseModelOutputWithPooling? Which one of these exactly should I use & why?
 # BaseModelOutputWithPooling? Based on this, how to return the required values.
 # PreTrainedModel Class
 #   - What is this? Where should I use this? How should I use this?
 # Test the modeling layer by loding weights with my implementation vs Actual JinaAI Model outputs.
-# Add the encode method
 # What extra modeling classes should be added for this model? Should they inherit from PreTrainedModel or JinaEV3PreTrainedModel?
 # Auto configs..something?
 #   - What about Tokenizer? Where are we defining that? Just in the auto config thing is enough?
@@ -533,7 +533,7 @@ class JinaEmbeddingsV3Output(XLMRobertaOutput):
         return hidden_states
 
 
-class JinaEmbeddingsV3Layer(nn.Module):
+class JinaEmbeddingsV3Layer(GradientCheckpointingLayer):
     def __init__(self, config: JinaEmbeddingsV3Config):
         super().__init__()
         self.attention = JinaEmbeddingsV3Attention(config)
@@ -628,10 +628,6 @@ class JinaEmbeddingsV3Pooler(XLMRobertaPooler):
 
         pooled_output = self.activation(pooled_output)
         return pooled_output
-
-
-class JinaEmbeddingsV3PreTrainedModel(PreTrainedModel):
-    pass
 
 
 def initialized_weights(shape: tuple[int], num_adaptations: int, init: str = "kaiming") -> torch.Tensor:
@@ -849,6 +845,33 @@ class LoRAParametrization(nn.Module):
             layer.forward = new_forward.__get__(layer, layer.__class__)
 
 
+class JinaEmbeddingsV3PreTrainedModel(PreTrainedModel):
+    config_class = JinaEmbeddingsV3Config
+    base_model_prefix = "jina_embeddings_v3"
+    supports_gradient_checkpointing = True
+    _supports_flash_attn = True
+    _supports_sdpa = True
+    _supports_flex_attn = True
+    _supports_attention_backend = True
+
+    _can_record_outputs = {
+        "hidden_states": JinaEmbeddingsV3Layer,
+        "attentions": JinaEmbeddingsV3SelfAttention,
+    }
+
+    @torch.no_grad()
+    def _init_weights(self, module):
+        super()._init_weights(module)
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight, std=self.config.initializer_range)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            nn.init.normal_(module.weight, std=self.config.initializer_range)
+            if module.padding_idx is not None:
+                nn.init.zeros_(module.weight[module.padding_idx])
+
+
 @auto_docstring
 class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
     _no_split_modules = ["JinaEmbeddingsV3Embeddings", "JinaEmbeddingsV3Layer"]
@@ -858,7 +881,7 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
         add_pooling_layer (bool, *optional*, defaults to `True`):
             Whether to add a pooling layer
         """
-        super().__init__()
+        super().__init__(config)
         self.config = config
 
         self.embeddings = JinaEmbeddingsV3Embeddings(config)
@@ -870,7 +893,7 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
         self._register_lora()
 
         # Initialize weights and apply final processing
-        # self.post_init()
+        self.post_init()
 
     def _setup_lora_config(self):
         self._lora_adaptations = self.config.lora_adaptations
@@ -905,7 +928,9 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
     def set_input_embeddings(self, value):
         self.embeddings.word_embeddings = value
 
-    @check_model_inputs
+    @merge_with_config_defaults
+    @capture_outputs
+    @auto_docstring
     def forward(
         self,
         input_ids: torch.Tensor | None = None,
