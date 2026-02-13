@@ -7,6 +7,7 @@ import torch.nn.utils.parametrize as parametrize
 from torch import nn
 from torch.nn import functional as F
 
+from ... import initialization as init
 from ...integrations import use_kernelized_func
 from ...modeling_outputs import BaseModelOutputWithPooling
 from ...modeling_rope_utils import RopeParameters
@@ -25,7 +26,6 @@ from ..xlm_roberta.modeling_xlm_roberta import (
     XLMRobertaSelfOutput,
     eager_attention_forward,
 )
-
 
 logger = logging.get_logger(__name__)
 
@@ -47,20 +47,32 @@ logger = logging.get_logger(__name__)
 #   - extra arguments (Are they needed? Can I remove them?)
 # set_input_embeddings, get_input_embeddings? Are these needed? What's the use?
 # get_extended_attention_mask? How to use directly, instead of adding it as a method?
+# PreTrainedModel Class
+#   - What is this? Where should I use this? How should I use this?
 
 
 # BaseModelOutputWithPooling? Which one of these exactly should I use & why?
 # BaseModelOutputWithPooling? Based on this, how to return the required values.
-# PreTrainedModel Class
-#   - What is this? Where should I use this? How should I use this?
+# For Pooling, cls token, mean pooling which one is happening here, in encode and in general?
+# Initialization of weights without from_pretrained and with from_pretrained?
+# So, Does huggingface transformers library models support any config? When loading a model? Like how does it work? If I change hidden_size from default 768 to 900 and then use that config to load the model, everything should collapse right? How will it effect?
+# Is it possible to do this? If, yes how? Wouldn't it be completely wrong? Where will get the checkpoint weights according to this new hidden_size? Similarly other config arguments like vocab_size, hidden_act, intermediate_size, num_attention_heads..etc.?? How does changing all these effect?
+# Can I just load the model with whatever config I want?
+# Also, Why does huggingface modeling code for different models have different classes other than main (BERTModel) model class like `BertForMaskedLM`, `BertForNextSentencePrediction`, `BertForSequenceClassification`
+# Like what is the purpose of them? I am always confused by what they are and what is the ues of them? How should users use it at all? For training or for inference or for fine tuning? Or for what exactly? 
+# I understand that the users of transformers library can use this class to instantiate an architecture of BERT + Some Head, correct mef I am wrong here.
+# But then what? What should they do with it? From where do they get the trained weights for it? Or it's sole purpose itself is to Fine-Tuning on userse own dataset? I want to clearly understand this deeply intuitively.
+# What's the difference? LoRA weights first vs post_init() Which one initializes first and which one next? What is the exact flow of these when we want to load the Jina-Embeddings-V3 checkpoint weights?
+# What is this stochastic_depth.py file? Where is it even used and purpose/use of it? Should I use it for the implementation anywhere?
+# What is this xlm_padding.py file? Where is it even used & Purpose/use of it? Should I use it for the implementation anywhere?
+
 # Test the modeling layer by loding weights with my implementation vs Actual JinaAI Model outputs.
 # What extra modeling classes should be added for this model? Should they inherit from PreTrainedModel or JinaEV3PreTrainedModel?
 # Auto configs..something?
 #   - What about Tokenizer? Where are we defining that? Just in the auto config thing is enough?
 #   - Exactly same as XLMRoberta Tokenizer? All pad,bos,eos id's and all also?
 #   - Then what about the tokenizer.json / special_tokens_map.json / tokenizer_config.json ? What are all these?
-# What is this stochastic_depth.py file? Where is it even used and purpose/use of it? Should I use it for the implementation anywhere?
-# What is this xlm_padding.py file? Where is it even used & Purpose/use of it? Should I use it for the implementation anywhere?
+
 # Tests for the model
 # Documentation for the model.
 
@@ -863,13 +875,16 @@ class JinaEmbeddingsV3PreTrainedModel(PreTrainedModel):
     def _init_weights(self, module):
         super()._init_weights(module)
         if isinstance(module, nn.Linear):
-            nn.init.normal_(module.weight, std=self.config.initializer_range)
+            init.normal_(module.weight, std=self.config.initializer_range)
             if module.bias is not None:
-                nn.init.zeros_(module.bias)
+               init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
-            nn.init.normal_(module.weight, std=self.config.initializer_range)
+            init.normal_(module.weight, std=self.config.initializer_range)
             if module.padding_idx is not None:
-                nn.init.zeros_(module.weight[module.padding_idx])
+                init.zeros_(module.weight[module.padding_idx])
+        elif isinstance(module, JinaEmbeddingsV3Embeddings):
+            init.copy_(module.position_ids, torch.arange(module.position_ids.shape[-1]).expand((1, -1)))
+            init.zeros_(module.token_type_ids)
 
 
 @auto_docstring
@@ -975,7 +990,7 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
 
         position_embeddings = self.rotary_emb(embedding_output, position_ids)
 
-        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape, dtype=torch.bfloat16)
+        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape, dtype=self.embeddings.word_embeddings.weight.dtype)
 
         encoder_outputs = self.encoder(
             embedding_output,
