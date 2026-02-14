@@ -2,6 +2,14 @@ import gc
 import torch
 from transformers import AutoModel, AutoTokenizer
 
+device = torch.device("cpu")
+
+if hasattr(torch, 'xpu') and torch.xpu.is_available():
+    device = torch.device("xpu")
+    print(f"Success! Using Intel GPU: {torch.xpu.get_device_name(0)}")
+else:
+    print("Warning: Using CPU. Check your installation.")
+
 
 # model = AutoModel.from_pretrained("jinaai/jina-embeddings-v3", trust_remote_code=True)
 # torch.save(model.state_dict(), "hf_model")
@@ -107,12 +115,17 @@ missing, unexpected = model.load_state_dict(new_state_dict, strict=False)
 del old_state_dict
 gc.collect()
 
+
+encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
+model.to(device=device)
+model.eval()
+
 with torch.no_grad():
     # model_output = model(**encoded_input, adapter_mask=adapter_mask)
     model_output = model(**encoded_input, adapter_mask=None)
+    print("Inference complete on device:", model.device)
 
 breakpoint()
-
 
 
 
