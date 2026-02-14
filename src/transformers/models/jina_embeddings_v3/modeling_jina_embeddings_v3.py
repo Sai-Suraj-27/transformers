@@ -878,8 +878,11 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
             inputs_embeds=inputs_embeds,
             adapter_mask=adapter_mask,
         )
+        print("Embedding output: \n", embedding_output)
 
         position_embeddings = self.rotary_emb(embedding_output, position_ids)
+
+        print("Position embeddings: \n", position_embeddings)
 
         extended_attention_mask = self.get_extended_attention_mask(
             attention_mask, input_shape, dtype=self.embeddings.word_embeddings.weight.dtype
