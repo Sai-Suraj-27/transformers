@@ -16,7 +16,7 @@ from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedConfig, PreTrai
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, logging
 from ...utils.generic import merge_with_config_defaults
-from ...utils.output_capturing import capture_outputs
+from ...utils.output_capturing import OutputRecorder, capture_outputs
 from ..llama.modeling_llama import LlamaRotaryEmbedding, apply_rotary_pos_emb
 from ..xlm_roberta.modeling_xlm_roberta import (
     XLMRobertaIntermediate,
@@ -42,8 +42,6 @@ logger = logging.get_logger(__name__)
 #   - What is this? Where should I use this? How should I use this?
 
 """
-BaseModelOutputWithPooling? Which one of these exactly should I use & why?
-BaseModelOutputWithPooling? Based on this, how to return the required values.
 What's the difference? LoRA weights first vs post_init() Which one initializes first and which one next? What is the exact flow of these when we want to load the Jina-Embeddings-V3 checkpoint weights?
 
 ✅ Test the modeling layer by loding weights with my implementation vs Actual JinaAI Model outputs.
@@ -254,7 +252,7 @@ class JinaEmbeddingsV3Embeddings(nn.Module):
         position_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
         adapter_mask: torch.LongTensor | None = None,
-    ):
+    ) -> torch.Tensor:
         if input_ids is not None:
             input_shape = input_ids.shape
             device = input_ids.device
@@ -341,7 +339,7 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
         position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
         adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
-    ):
+    ) -> tuple[torch.Tensor]:
         batch_size, seq_len = hidden_states.shape[:-1]
         out_shape = (batch_size, self.num_attention_heads, seq_len, self.attention_head_size)
         hidden_shape = (batch_size, seq_len, 3, self.num_attention_heads, self.attention_head_size)
@@ -409,7 +407,7 @@ class JinaEmbeddingsV3SelfOutput(XLMRobertaSelfOutput):
         hidden_states: torch.Tensor,
         input_tensor: torch.Tensor,
         adapter_mask: torch.Tensor | None = None,
-    ):
+    ) -> torch.Tensor:
         if adapter_mask is not None:
             output_dim = self.dense.out_features
             output_tensor = torch.empty(
@@ -447,7 +445,7 @@ class JinaEmbeddingsV3Attention(nn.Module):
         position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
         adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
-    ):
+    ) -> tuple[torch.Tensor]:
         attention_output, attn_weights = self.attention_class(
             hidden_states,
             attention_mask=attention_mask,
@@ -540,8 +538,8 @@ class JinaEmbeddingsV3Layer(GradientCheckpointingLayer):
         position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
         adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
-    ):
-        attention_output, attn_weights = self.attention(
+    ) -> torch.FloatTensor:
+        attention_output, _ = self.attention(
             hidden_states,
             attention_mask,
             position_embeddings,
@@ -566,7 +564,7 @@ class JinaEmbeddingsV3Encoder(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
+        hidden_states: torch.FloatTensor,
         attention_mask: torch.FloatTensor | None = None,
         position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
         adapter_mask: torch.Tensor | None = None,
@@ -595,7 +593,7 @@ class JinaEmbeddingsV3Pooler(XLMRobertaPooler):
         hidden_states: torch.Tensor,
         pool: bool = True,
         adapter_mask: torch.Tensor | None = None
-    ):
+    ) -> torch.FloatTensor:
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
         first_token_tensor = hidden_states[:, 0, :] if pool else hidden_states
@@ -849,7 +847,7 @@ class JinaEmbeddingsV3PreTrainedModel(PreTrainedModel):
 
     _can_record_outputs = {
         "hidden_states": JinaEmbeddingsV3Layer,
-        "attentions": JinaEmbeddingsV3SelfAttention,
+        "attentions": JinaEmbeddingsV3Attention,
     }
 
     @torch.no_grad()

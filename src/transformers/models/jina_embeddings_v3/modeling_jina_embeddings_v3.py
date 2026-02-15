@@ -52,7 +52,7 @@ class JinaEmbeddingsV3Embeddings(nn.Module):
         position_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.FloatTensor | None = None,
         adapter_mask: torch.LongTensor | None = None,
-    ):
+    ) -> torch.Tensor:
         if input_ids is not None:
             input_shape = input_ids.shape
             device = input_ids.device
@@ -261,7 +261,7 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
         position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
         adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
-    ):
+    ) -> tuple[torch.Tensor]:
         batch_size, seq_len = hidden_states.shape[:-1]
         out_shape = (batch_size, self.num_attention_heads, seq_len, self.attention_head_size)
         hidden_shape = (batch_size, seq_len, 3, self.num_attention_heads, self.attention_head_size)
@@ -368,7 +368,7 @@ class JinaEmbeddingsV3Attention(nn.Module):
         position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
         adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
-    ):
+    ) -> tuple[torch.Tensor]:
         attention_output, attn_weights = self.attention_class(
             hidden_states,
             attention_mask=attention_mask,
@@ -466,8 +466,8 @@ class JinaEmbeddingsV3Layer(GradientCheckpointingLayer):
         position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
         adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
-    ):
-        attention_output, attn_weights = self.attention(
+    ) -> torch.FloatTensor:
+        attention_output, _ = self.attention(
             hidden_states,
             attention_mask,
             position_embeddings,
@@ -492,7 +492,7 @@ class JinaEmbeddingsV3Encoder(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
+        hidden_states: torch.FloatTensor,
         attention_mask: torch.FloatTensor | None = None,
         position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
         adapter_mask: torch.Tensor | None = None,
@@ -520,7 +520,7 @@ class JinaEmbeddingsV3Pooler(nn.Module):
 
     def forward(
         self, hidden_states: torch.Tensor, pool: bool = True, adapter_mask: torch.Tensor | None = None
-    ) -> torch.Tensor:
+    ) -> torch.FloatTensor:
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
         first_token_tensor = hidden_states[:, 0, :] if pool else hidden_states
@@ -759,7 +759,7 @@ class JinaEmbeddingsV3PreTrainedModel(PreTrainedModel):
 
     _can_record_outputs = {
         "hidden_states": JinaEmbeddingsV3Layer,
-        "attentions": JinaEmbeddingsV3SelfAttention,
+        "attentions": JinaEmbeddingsV3Attention,
     }
 
     @torch.no_grad()
@@ -878,11 +878,8 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
             inputs_embeds=inputs_embeds,
             adapter_mask=adapter_mask,
         )
-        print("Embedding output: \n", embedding_output)
 
         position_embeddings = self.rotary_emb(embedding_output, position_ids)
-
-        print("Position embeddings: \n", position_embeddings)
 
         extended_attention_mask = self.get_extended_attention_mask(
             attention_mask, input_shape, dtype=self.embeddings.word_embeddings.weight.dtype
