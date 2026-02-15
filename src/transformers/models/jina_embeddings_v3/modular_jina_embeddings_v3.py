@@ -44,13 +44,11 @@ logger = logging.get_logger(__name__)
 """
 BaseModelOutputWithPooling? Which one of these exactly should I use & why?
 BaseModelOutputWithPooling? Based on this, how to return the required values.
-For Pooling, cls token, mean pooling which one is happening here, in encode and in general?
 What's the difference? LoRA weights first vs post_init() Which one initializes first and which one next? What is the exact flow of these when we want to load the Jina-Embeddings-V3 checkpoint weights?
-What is this stochastic_depth.py file? Where is it even used and purpose/use of it? Should I use it for the implementation anywhere?
-What is this xlm_padding.py file? Where is it even used & Purpose/use of it? Should I use it for the implementation anywhere?
 
-Test the modeling layer by loding weights with my implementation vs Actual JinaAI Model outputs.
-What extra modeling classes should be added for this model? Should they inherit from PreTrainedModel or JinaEV3PreTrainedModel?
+✅ Test the modeling layer by loding weights with my implementation vs Actual JinaAI Model outputs.
+What extra modeling classes should be added for this model? Should they inherit from PreTrainedModel or JinaV3PreTrainedModel?
+
 Auto configs..something?
   - What about Tokenizer? Where are we defining that? Just in the auto config thing is enough?
   - Exactly same as XLMRoberta Tokenizer? All pad,bos,eos id's and all also?
