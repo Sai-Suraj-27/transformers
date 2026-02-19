@@ -6,16 +6,20 @@ import torch
 import torch.nn.utils.parametrize as parametrize
 from torch import nn
 from torch.nn import functional as F
+from torch.nn import CrossEntropyLoss
 
 from ... import initialization as init
 from ...integrations import use_kernelized_func
 from ...modeling_layers import GradientCheckpointingLayer
-from ...modeling_outputs import BaseModelOutputWithPooling
+from ...modeling_outputs import (
+    BaseModelOutputWithPooling, 
+    MaskedLMOutput,
+)
 from ...modeling_rope_utils import RopeParameters
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedConfig, PreTrainedModel
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, logging
-from ...utils.generic import merge_with_config_defaults
+from ...utils.generic import merge_with_config_defaults, can_return_tuple
 from ...utils.output_capturing import OutputRecorder, capture_outputs
 from ..llama.modeling_llama import LlamaRotaryEmbedding, apply_rotary_pos_emb
 from ..xlm_roberta.modeling_xlm_roberta import (
@@ -23,16 +27,19 @@ from ..xlm_roberta.modeling_xlm_roberta import (
     XLMRobertaOutput,
     XLMRobertaPooler,
     XLMRobertaSelfOutput,
+    XLMRobertaLMHead,
+    XLMRobertaForSequenceClassification,
+    XLMRobertaForTokenClassification,
+    XLMRobertaForQuestionAnswering,
     eager_attention_forward,
 )
-
 
 logger = logging.get_logger(__name__)
 
 # Tokenizer: `XLM-RoBERTa` tokenizer
 # Model Architecture: Based on `jina-XLM-RoBERTa` model, with 5 LoRA adapters for 4 different tasks.
-
 # XLMRobertaLoRA
+
 #   - XLMRobertaModel
 #       - XLMRobertaPreTrainedModel
 #           - PreTrainedModel
@@ -45,7 +52,15 @@ logger = logging.get_logger(__name__)
 What's the difference? LoRA weights first vs post_init() Which one initializes first and which one next? What is the exact flow of these when we want to load the Jina-Embeddings-V3 checkpoint weights?
 
 ✅ Test the modeling layer by loding weights with my implementation vs Actual JinaAI Model outputs.
+Check once again Pooler outputs for all 5 task_ids
+
 What extra modeling classes should be added for this model? Should they inherit from PreTrainedModel or JinaV3PreTrainedModel?
+
+Check weights/model architectures for all new heads.
+Check for any UnExpected or Warnings while loading these with weights.
+
+Once everything is done, can I just directly load the model without remote_code=True? By using this local transformers source code?
+Will it also go through the conversion_mapping.py?
 
 Auto configs..something?
   - What about Tokenizer? Where are we defining that? Just in the auto config thing is enough?
@@ -55,6 +70,8 @@ Auto configs..something?
 Tests for the model
 Documentation for the model.
 
+# Check all comments / Or left over notes.
+# Opencode review of all modeling, config, modular files.
 """
 
 class JinaEmbeddingsV3Config(PreTrainedConfig):
@@ -379,7 +396,6 @@ class JinaEmbeddingsV3SelfAttention(nn.Module):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        # `Jina Embeddings V3` config.json has flash_attn = True. So, does this cause any differences? Which one should i use?
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
             self.config._attn_implementation, eager_attention_forward
         )
@@ -985,3 +1001,116 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
             last_hidden_state=sequence_output,
             pooler_output=pooled_output,
         )
+
+
+@auto_docstring
+class JinaEmbeddingsV3ForMaskedLM(JinaEmbeddingsV3PreTrainedModel):
+    _tied_weights_keys = {
+        "lm_head.decoder.weight": "jina_embeddings_v3.embeddings.word_embeddings.weight",
+        "lm_head.decoder.bias": "lm_head.bias",
+    }
+
+    def __init__(self, config):
+        super().__init__(config)
+
+        self.jina_embeddings_v3 = JinaEmbeddingsV3Model(config, add_pooling_layer=False)
+        self.lm_head = XLMRobertaLMHead(config)
+
+        # Initialize weights and apply final processing
+        self.post_init()
+
+    def get_output_embeddings(self) -> nn.Linear:
+        return self.lm_head.decoder
+
+    def set_output_embeddings(self, new_embeddings: nn.Linear) -> None:
+        self.lm_head.decoder = new_embeddings
+        self.lm_head.bias = new_embeddings.bias
+
+    def get_input_embeddings(self) -> nn.Embedding:
+        return self.jina_embeddings_v3.embeddings.word_embeddings
+
+    @can_return_tuple
+    @auto_docstring
+    def forward(
+        self,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.FloatTensor | None = None,
+        token_type_ids: torch.LongTensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        labels: torch.LongTensor | None = None,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> tuple[torch.Tensor] | MaskedLMOutput:
+        r"""
+        token_type_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Segment token indices to indicate first and second portions of the inputs. Indices are selected in `[0,1]`:
+
+            - 0 corresponds to a *sentence A* token,
+            - 1 corresponds to a *sentence B* token.
+            This parameter can only be used when the model is initialized with `type_vocab_size` parameter with value
+            >= 2. All the value in this tensor should be always < type_vocab_size.
+
+            [What are token type IDs?](../glossary#token-type-ids)
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should be in `[-100, 0, ...,
+            config.vocab_size]` (see `input_ids` docstring) Tokens with indices set to `-100` are ignored (masked), the
+            loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`
+        """
+        outputs = self.jina_embeddings_v3(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            inputs_embeds=inputs_embeds,
+            return_dict=True,
+            **kwargs,
+        )
+        sequence_output = outputs[0]
+
+        prediction_scores = self.lm_head(sequence_output)
+
+        masked_lm_loss = None
+        if labels is not None:
+            # move labels to correct device
+            labels = labels.to(prediction_scores.device)
+            loss_fct = CrossEntropyLoss()
+            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+
+        return MaskedLMOutput(
+            loss=masked_lm_loss,
+            logits=prediction_scores,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+
+@auto_docstring(
+    custom_intro="""
+    Jina-Embeddings-V3 Model transformer with a sequence classification/regression head on top (a linear layer on top of the
+    pooled output) e.g. for GLUE tasks.
+    """
+)
+class JinaEmbeddingsV3ForSequenceClassification(XLMRobertaForSequenceClassification):
+        pass
+
+
+class JinaEmbeddingsV3ForTokenClassification(XLMRobertaForTokenClassification):
+    pass
+
+
+@auto_docstring
+class JinaEmbeddingsV3ForQuestionAnswering(XLMRobertaForQuestionAnswering):
+    pass
+
+
+
+
+
+__all__ = [
+    "JinaEmbeddingsV3PreTrainedModel",
+    "JinaEmbeddingsV3Model",
+    "JinaEmbeddingsV3ForMaskedLM",
+    "JinaEmbeddingsV3ForSequenceClassification",
+    "JinaEmbeddingsV3ForTokenClassification",
+    "JinaEmbeddingsV3ForQuestionAnswering",
+]
