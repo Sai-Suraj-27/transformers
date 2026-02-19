@@ -1105,7 +1105,6 @@ class JinaEmbeddingsV3ForQuestionAnswering(XLMRobertaForQuestionAnswering):
 
 
 
-
 __all__ = [
     "JinaEmbeddingsV3PreTrainedModel",
     "JinaEmbeddingsV3Model",
