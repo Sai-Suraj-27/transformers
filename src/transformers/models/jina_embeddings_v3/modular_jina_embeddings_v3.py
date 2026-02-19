@@ -5,45 +5,39 @@ from functools import partial
 import torch
 import torch.nn.utils.parametrize as parametrize
 from torch import nn
-from torch.nn import functional as F
 from torch.nn import CrossEntropyLoss
+from torch.nn import functional as F
 
 from ... import initialization as init
 from ...integrations import use_kernelized_func
 from ...modeling_layers import GradientCheckpointingLayer
 from ...modeling_outputs import (
-    BaseModelOutputWithPooling, 
+    BaseModelOutputWithPooling,
     MaskedLMOutput,
 )
 from ...modeling_rope_utils import RopeParameters
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedConfig, PreTrainedModel
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, logging
-from ...utils.generic import merge_with_config_defaults, can_return_tuple
-from ...utils.output_capturing import OutputRecorder, capture_outputs
+from ...utils.generic import can_return_tuple, merge_with_config_defaults
+from ...utils.output_capturing import capture_outputs
 from ..llama.modeling_llama import LlamaRotaryEmbedding, apply_rotary_pos_emb
 from ..xlm_roberta.modeling_xlm_roberta import (
+    XLMRobertaForQuestionAnswering,
+    XLMRobertaForSequenceClassification,
+    XLMRobertaForTokenClassification,
     XLMRobertaIntermediate,
+    XLMRobertaLMHead,
     XLMRobertaOutput,
     XLMRobertaPooler,
     XLMRobertaSelfOutput,
-    XLMRobertaLMHead,
-    XLMRobertaForSequenceClassification,
-    XLMRobertaForTokenClassification,
-    XLMRobertaForQuestionAnswering,
     eager_attention_forward,
 )
+
 
 logger = logging.get_logger(__name__)
 
 # Tokenizer: `XLM-RoBERTa` tokenizer
-# Model Architecture: Based on `jina-XLM-RoBERTa` model, with 5 LoRA adapters for 4 different tasks.
-# XLMRobertaLoRA
-
-#   - XLMRobertaModel
-#       - XLMRobertaPreTrainedModel
-#           - PreTrainedModel
-
 
 # PreTrainedModel Class
 #   - What is this? Where should I use this? How should I use this?
@@ -54,20 +48,18 @@ What's the difference? LoRA weights first vs post_init() Which one initializes f
 ✅ Test the modeling layer by loding weights with my implementation vs Actual JinaAI Model outputs.
 Check once again Pooler outputs for all 5 task_ids
 
-What extra modeling classes should be added for this model? Should they inherit from PreTrainedModel or JinaV3PreTrainedModel?
-
 Check weights/model architectures for all new heads.
 Check for any UnExpected or Warnings while loading these with weights.
-
-Once everything is done, can I just directly load the model without remote_code=True? By using this local transformers source code?
-Will it also go through the conversion_mapping.py?
 
 Auto configs..something?
   - What about Tokenizer? Where are we defining that? Just in the auto config thing is enough?
   - Exactly same as XLMRoberta Tokenizer? All pad,bos,eos id's and all also?
   - Then what about the tokenizer.json / special_tokens_map.json / tokenizer_config.json ? What are all these?
 
-Tests for the model
+Once everything is done, can I just directly load the model without remote_code=True? By using this local transformers source code?
+Will it also go through the conversion_mapping.py? print & check?
+
+Tests for the model, All are successful?
 Documentation for the model.
 
 # Check all comments / Or left over notes.
@@ -913,7 +905,7 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
         if (
             not isinstance(self._task_instructions, dict)
             or len(self._task_instructions) != len(self._lora_adaptations)
-            or not all([v in self._lora_adaptations for v in self._task_instructions.keys()])
+            or not all(v in self._lora_adaptations for v in self._task_instructions.keys())
         ):
             raise ValueError(
                 "`task_instructions` must be a dict and contain the same number of elements "
@@ -1003,6 +995,10 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
         )
 
 
+class JinaEmbeddingsV3LMHead(XLMRobertaLMHead):
+    pass
+
+
 @auto_docstring
 class JinaEmbeddingsV3ForMaskedLM(JinaEmbeddingsV3PreTrainedModel):
     _tied_weights_keys = {
@@ -1014,7 +1010,7 @@ class JinaEmbeddingsV3ForMaskedLM(JinaEmbeddingsV3PreTrainedModel):
         super().__init__(config)
 
         self.jina_embeddings_v3 = JinaEmbeddingsV3Model(config, add_pooling_layer=False)
-        self.lm_head = XLMRobertaLMHead(config)
+        self.lm_head = JinaEmbeddingsV3LMHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
