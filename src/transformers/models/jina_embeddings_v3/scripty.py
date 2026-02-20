@@ -38,7 +38,7 @@ from transformers.models.jina_embeddings_v3.modeling_jina_embeddings_v3 import J
 config = JinaEmbeddingsV3Config()
 model = JinaEmbeddingsV3Model(config)
 
-old_state_dict = torch.load("hf_model", map_location="cpu")
+old_state_dict = torch.load("src/transformers/models/jina_embeddings_v3/hf_model", map_location="cpu")
 # print(model)
 rename = {
     "embeddings.LayerNorm":"roberta.emb_ln",
@@ -76,7 +76,7 @@ model.eval()
 
 with torch.no_grad():
     # model_output = model(**encoded_input, adapter_mask=adapter_mask)
-    model_output = model(**encoded_input, adapter_mask=None)
+    model_output = model(**encoded_input, adapter_mask=None, output_attentions=True, output_hidden_states=True)
     print("Inference complete on device:", model.device)
 
 breakpoint()

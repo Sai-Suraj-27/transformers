@@ -45,12 +45,6 @@ logger = logging.get_logger(__name__)
 """
 What's the difference? LoRA weights first vs post_init() Which one initializes first and which one next? What is the exact flow of these when we want to load the Jina-Embeddings-V3 checkpoint weights?
 
-✅ Test the modeling layer by loding weights with my implementation vs Actual JinaAI Model outputs.
-Check once again Pooler outputs for all 5 task_ids
-
-Check weights/model architectures for all new heads.
-Check for any UnExpected or Warnings while loading these with weights.
-
 Auto configs..something?
   - What about Tokenizer? Where are we defining that? Just in the auto config thing is enough?
   - Exactly same as XLMRoberta Tokenizer? All pad,bos,eos id's and all also?
