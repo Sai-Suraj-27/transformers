@@ -34,20 +34,19 @@ from ..xlm_roberta.modeling_xlm_roberta import (
     eager_attention_forward,
 )
 
-
 logger = logging.get_logger(__name__)
-
-# Tokenizer: `XLM-RoBERTa` tokenizer
 
 # PreTrainedModel Class
 #   - What is this? Where should I use this? How should I use this?
 
 """
+PreTrainedModel `_init_weights()`
 What's the difference? LoRA weights first vs post_init() Which one initializes first and which one next? What is the exact flow of these when we want to load the Jina-Embeddings-V3 checkpoint weights?
 
+If I load MLM, classification or other heads of existing models then will it give any warnings like fine tune before using or any unexpected/error? what other flags that come in general while loading the model?
+
 Auto configs..something?
-  - What about Tokenizer? Where are we defining that? Just in the auto config thing is enough?
-  - Exactly same as XLMRoberta Tokenizer? All pad,bos,eos id's and all also?
+  - Exactly same as XLMRoberta Tokenizer? All pad, bos, eos id's and all also?
   - Then what about the tokenizer.json / special_tokens_map.json / tokenizer_config.json ? What are all these?
 
 Once everything is done, can I just directly load the model without remote_code=True? By using this local transformers source code?
@@ -637,24 +636,24 @@ def initialized_weights(shape: tuple[int], num_adaptations: int, init: str = "ka
     return torch.stack(weight_data, dim=0)
 
 
-"""
-This LoRA implementation was inspired by  https://github.com/cccntu/minLoRA
-The MIT License (MIT) Copyright (c) 2020 Andrej Karpathy
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software
-and associated documentation files (the "Software"), to deal in the Software without restriction,
-including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
-and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-The above copyright notice and this permission notice shall be included in all copies or substantial
-portions of the Software.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-"""
+
 class LoRAParametrization(nn.Module):
     """
+    This LoRA implementation was inspired by  https://github.com/cccntu/minLoRA
+    The MIT License (MIT) Copyright (c) 2020 Andrej Karpathy
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+    and associated documentation files (the "Software"), to deal in the Software without restriction,
+    including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
+    subject to the following conditions:
+    The above copyright notice and this permission notice shall be included in all copies or substantial
+    portions of the Software.
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
     A Low-Rank Adaptation (LoRA) parametrization that can be attached to Linear and Embedding layers.
     It supports multi-task adaptation by maintaining a stack of adapter weights (A and B matrices)
     and selecting the appropriate one based on a `task_id` provided during the forward pass.
