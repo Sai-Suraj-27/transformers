@@ -570,6 +570,21 @@ def initialized_weights(shape: tuple[int], num_adaptations: int, init: str = "ka
 
 class LoRAParametrization(nn.Module):
     """
+    This LoRA implementation was inspired by  https://github.com/cccntu/minLoRA
+    The MIT License (MIT) Copyright (c) 2020 Andrej Karpathy
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+    and associated documentation files (the "Software"), to deal in the Software without restriction,
+    including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
+    subject to the following conditions:
+    The above copyright notice and this permission notice shall be included in all copies or substantial
+    portions of the Software.
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
     A Low-Rank Adaptation (LoRA) parametrization that can be attached to Linear and Embedding layers.
     It supports multi-task adaptation by maintaining a stack of adapter weights (A and B matrices)
     and selecting the appropriate one based on a `task_id` provided during the forward pass.
@@ -771,15 +786,7 @@ class JinaEmbeddingsV3PreTrainedModel(PreTrainedModel):
     @torch.no_grad()
     def _init_weights(self, module):
         super()._init_weights(module)
-        if isinstance(module, nn.Linear):
-            init.normal_(module.weight, std=self.config.initializer_range)
-            if module.bias is not None:
-                init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding):
-            init.normal_(module.weight, std=self.config.initializer_range)
-            if module.padding_idx is not None:
-                init.zeros_(module.weight[module.padding_idx])
-        elif isinstance(module, JinaEmbeddingsV3Embeddings):
+        if isinstance(module, JinaEmbeddingsV3Embeddings):
             init.copy_(module.position_ids, torch.arange(module.position_ids.shape[-1]).expand((1, -1)))
             init.zeros_(module.token_type_ids)
 
@@ -801,11 +808,11 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
         self.pooler = JinaEmbeddingsV3Pooler(config) if add_pooling_layer else None
         self.rotary_emb = JinaEmbeddingsV3RotaryEmbedding(config)
 
-        self._setup_lora_config()
-        self._register_lora()
-
         # Initialize weights and apply final processing
         self.post_init()
+
+        self._setup_lora_config()
+        self._register_lora()
 
     def _setup_lora_config(self):
         self._lora_adaptations = self.config.lora_adaptations
@@ -853,7 +860,7 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
         adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
     ) -> BaseModelOutputWithPooling | tuple:
-        if (input_ids is None) and (inputs_embeds is not None):
+        if (input_ids is not None) and (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
         elif input_ids is not None:
             input_shape = input_ids.size()

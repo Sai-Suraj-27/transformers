@@ -721,7 +721,7 @@ MODEL_NAMES_MAPPING = OrderedDict[str, str](
         ("jamba", "Jamba"),
         ("janus", "Janus"),
         ("jetmoe", "JetMoe"),
-        ("jina_embeddings_v3", "JinaEmbeddingsV3Config"),
+        ("jina_embeddings_v3", "JinaEmbeddingsV3"),
         ("kosmos-2", "KOSMOS-2"),
         ("kosmos-2.5", "KOSMOS-2.5"),
         ("kyutai_speech_to_text", "KyutaiSpeechToText"),
