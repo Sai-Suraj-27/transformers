@@ -36,21 +36,8 @@ from ..xlm_roberta.modeling_xlm_roberta import (
 
 logger = logging.get_logger(__name__)
 
-# PreTrainedModel Class
-#   - What is this? Where should I use this? How should I use this?
-
 """
-PreTrainedModel `_init_weights()`
-What's the difference? LoRA weights first vs post_init() Which one initializes first and which one next? What is the exact flow of these when we want to load the Jina-Embeddings-V3 checkpoint weights?
-
-If I load MLM, classification or other heads of existing models then will it give any warnings like fine tune before using or any unexpected/error? what other flags that come in general while loading the model?
-
-Auto configs..something?
-  - Exactly same as XLMRoberta Tokenizer? All pad, bos, eos id's and all also?
-  - Then what about the tokenizer.json / special_tokens_map.json / tokenizer_config.json ? What are all these?
-
-Once everything is done, can I just directly load the model without remote_code=True? By using this local transformers source code?
-Will it also go through the conversion_mapping.py? print & check?
+Test once again!!!
 
 Tests for the model, All are successful?
 Documentation for the model.
@@ -636,7 +623,6 @@ def initialized_weights(shape: tuple[int], num_adaptations: int, init: str = "ka
     return torch.stack(weight_data, dim=0)
 
 
-
 class LoRAParametrization(nn.Module):
     """
     This LoRA implementation was inspired by  https://github.com/cccntu/minLoRA
@@ -854,15 +840,7 @@ class JinaEmbeddingsV3PreTrainedModel(PreTrainedModel):
     @torch.no_grad()
     def _init_weights(self, module):
         super()._init_weights(module)
-        if isinstance(module, nn.Linear):
-            init.normal_(module.weight, std=self.config.initializer_range)
-            if module.bias is not None:
-               init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding):
-            init.normal_(module.weight, std=self.config.initializer_range)
-            if module.padding_idx is not None:
-                init.zeros_(module.weight[module.padding_idx])
-        elif isinstance(module, JinaEmbeddingsV3Embeddings):
+        if isinstance(module, JinaEmbeddingsV3Embeddings):
             init.copy_(module.position_ids, torch.arange(module.position_ids.shape[-1]).expand((1, -1)))
             init.zeros_(module.token_type_ids)
 
@@ -884,11 +862,11 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
         self.pooler = JinaEmbeddingsV3Pooler(config) if add_pooling_layer else None
         self.rotary_emb = JinaEmbeddingsV3RotaryEmbedding(config)
 
-        self._setup_lora_config()
-        self._register_lora()
-
         # Initialize weights and apply final processing
         self.post_init()
+
+        self._setup_lora_config()
+        self._register_lora()
 
     def _setup_lora_config(self):
         self._lora_adaptations = self.config.lora_adaptations
@@ -936,7 +914,7 @@ class JinaEmbeddingsV3Model(JinaEmbeddingsV3PreTrainedModel):
         adapter_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
     ) -> BaseModelOutputWithPooling | tuple:
-        if (input_ids is None) and (inputs_embeds is not None):
+        if (input_ids is not None) and (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
         elif input_ids is not None:
             input_shape = input_ids.size()
