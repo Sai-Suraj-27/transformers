@@ -180,3 +180,6 @@ class JinaEmbeddingsV3Config(PreTrainedConfig):
         self.truncate_dim = truncate_dim
 
         super().__init__(**kwargs)
+
+
+__all__ = ["JinaEmbeddingsV3Config"]
