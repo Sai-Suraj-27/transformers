@@ -16,7 +16,7 @@ from transformers.models.jina_embeddings_v3 import JinaEmbeddingsV3Config
 import unittest
 import pytest
 
-from transformers import AutoTokenizer, is_torch_available
+from transformers import AutoTokenizer, is_torch_available, JinaEmbeddingsV3ForTokenClassification
 from transformers.testing_utils import (
     require_torch,
     slow,
@@ -171,5 +171,141 @@ class JinaEmbeddingsV3ModelTester:
         result = model(input_ids, attention_mask=input_mask, token_type_ids=token_type_ids, labels=sequence_labels)
         self.parent.assertEqual(result.logits.shape, (self.batch_size, self.num_labels))
 
+    def create_and_check_for_token_classification(
+        self,
+        config,
+        input_ids,
+        token_type_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
+        next_sentence_label,
+    ):
+        config.num_labels = self.num_labels
+        model = NomicBertForTokenClassification(config=config)
+        model.to(torch_device)
+        model.eval()
+        result = model(input_ids, attention_mask=input_mask, token_type_ids=token_type_ids, labels=token_labels)
+        self.parent.assertEqual(result.logits.shape, (self.batch_size, self.seq_length, self.num_labels))
 
+
+
+
+@require_torch
+class JinaEmbeddingsV3ModelTest(ModelTesterMixin, PipelineTesterMixin, unittest.TestCase):
+    all_model_classes = (
+        (
+            JinaEmbeddingsV3Model,
+            JinaEmbeddingsV3ForMaskedLM,
+            JinaEmbeddingsV3ForQuestionAnswering,
+            JinaEmbeddingsV3ForSequenceClassification,
+            JinaEmbeddingsV3ForTokenClassification
+        )
+        if is_torch_available()
+        else ()
+    )
+    pipeline_model_mapping = (
+        {
+            "feature-extraction": JinaEmbeddingsV3Model,
+            "fill-mask": JinaEmbeddingsV3ForMaskedLM,
+            "question-answering": JinaEmbeddingsV3ForQuestionAnswering,
+            "text-classification": JinaEmbeddingsV3ForSequenceClassification,
+            "token-classification": JinaEmbeddingsV3ForTokenClassification,
+            "zero-shot": JinaEmbeddingsV3ForSequenceClassification,
+        }
+        if is_torch_available()
+        else {}
+    )
+
+    def setUp(self):
+        self.model_tester = JinaEmbeddingsV3ModelTester(self)
+        self.config_tester = ConfigTester(self, config_class=JinaEmbeddingsV3Config, hidden_size=37)
+
+    def test_config(self):
+        self.config_tester.run_common_tests()
+
+    def test_model(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_model(*config_and_inputs)
+
+    def test_for_masked_lm(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_for_masked_lm(*config_and_inputs)
+
+    def test_for_question_answering(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_for_question_answering(*config_and_inputs)
+
+    def test_for_sequence_classification(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_for_sequence_classification(*config_and_inputs)
+
+    def test_for_sequence_classification(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_for_sequence_classification(*config_and_inputs)
+
+    @slow
+    def test_model_from_pretrained(self):
+        model_name = "jinaai/jina-embeddings-v3"
+        model = JinaEmbeddingsV3Model.from_pretrained(model_name)
+        self.assertIsNotNone(model)
+
+
+@require_torch
+class JinaEmbeddingsV3ModelIntegrationTest(unittest.TestCase):
+    @slow
+    def test_inference_no_head_absolute_embedding(self):
+        model = JinaEmbeddingsV3Model.from_pretrained("jinaai/jina-embeddings-v3")
+        input_ids = torch.tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        attention_mask = torch.tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
+        with torch.no_grad():
+            output = model(input_ids, attention_mask=attention_mask)[0]
+        expected_shape = torch.Size((1, 11, 768))
+        self.assertEqual(output.shape, expected_shape)
+        expected_slice = torch.tensor(
+            # [[[-0.6513, 1.5035, -0.2766], [-0.6515, 1.5046, -0.2780], [-0.6512, 1.5049, -0.2784]]]
+        )
+
+        torch.testing.assert_close(output[:, 1:4, 1:4], expected_slice, rtol=1e-4, atol=1e-4)
+
+    @slow
+    @pytest.mark.torch_export_test
+    def test_export(self):
+        # distilbert_model = "jinaai/jina-embeddings-v3"
+        device = "cpu"
+        attn_implementation = "sdpa"
+        max_length = 64
+
+        tokenizer = AutoTokenizer.from_pretrained(distilbert_model)
+        inputs = tokenizer(
+            f"Paris is the {tokenizer.mask_token} of France.",
+            return_tensors="pt",
+            padding="max_length",
+            max_length=max_length,
+        )
+
+        model = JinaEmbeddingsV3ForMaskedLM.from_pretrained(
+            distilbert_model,
+            device_map=device,
+            attn_implementation=attn_implementation,
+        )
+
+        logits = model(**inputs).logits
+        eg_predicted_mask = tokenizer.decode(logits[0, 4].topk(5).indices)
+        self.assertEqual(
+            eg_predicted_mask.split(),
+            ["capital", "capitol", "comune", "arrondissement", "bastille"],
+        )
+
+        exported_program = torch.export.export(
+            model,
+            args=(inputs["input_ids"],),
+            kwargs={"attention_mask": inputs["attention_mask"]},
+            strict=True,
+        )
+
+        result = exported_program.module().forward(inputs["input_ids"], inputs["attention_mask"])
+        ep_predicted_mask = tokenizer.decode(result.logits[0, 4].topk(5).indices)
+        self.assertEqual(eg_predicted_mask, ep_predicted_mask)
 

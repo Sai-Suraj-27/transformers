@@ -20,7 +20,8 @@ else:
 
 sentences = ["How is the weather today?", "What is the current weather like today?"]
 tokenizer = AutoTokenizer.from_pretrained("jinaai/jina-embeddings-v3")
-encoded_input = tokenizer(sentences, padding=True, truncation=True, return_tensors="pt")
+encoded_input = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
 # task = 'retrieval.query'
 # task_id = 0
 # # task_id = model._adaptation_map[task]
@@ -65,12 +66,12 @@ for old_key, old_value in old_state_dict.items():
     new_state_dict[new_key] = old_value
 
 missing, unexpected = model.load_state_dict(new_state_dict, strict=False)
+print(f"Missing: {missing}, unexpected: {unexpected}")
 
 del old_state_dict
 gc.collect()
 
 
-encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
 model.to(device=device)
 model.eval()
 

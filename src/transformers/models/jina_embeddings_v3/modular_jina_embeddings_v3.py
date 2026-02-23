@@ -38,8 +38,6 @@ from ..xlm_roberta.modeling_xlm_roberta import (
 logger = logging.get_logger(__name__)
 
 """
-Test once again!!!
-
 Tests for the model, All are successful?
 Documentation for the model.
 
