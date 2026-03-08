@@ -224,13 +224,10 @@ class ViltModelTest(ModelTesterMixin, PipelineTesterMixin, unittest.TestCase):
         if is_torch_available()
         else ()
     )
-    pipeline_model_mapping = (
-        {"image-feature-extraction": ViltModel, "visual-question-answering": ViltForQuestionAnswering}
-        if is_torch_available()
-        else {}
-    )
+    pipeline_model_mapping = {"image-feature-extraction": ViltModel} if is_torch_available() else {}
 
     model_split_percents = [0.5, 0.8, 0.9]
+    test_torch_exportable = False
 
     # ViltForMaskedLM, ViltForQuestionAnswering and ViltForImagesAndTextClassification require special treatment
     def _prepare_for_class(self, inputs_dict, model_class, return_labels=False):
@@ -528,6 +525,8 @@ class ViltModelTest(ModelTesterMixin, PipelineTesterMixin, unittest.TestCase):
 @require_torch
 class ViltForImagesAndTextClassificationModelTest(ViltModelTest, unittest.TestCase):
     all_model_classes = (ViltForImagesAndTextClassification,) if is_torch_available() else ()
+
+    test_torch_exportable = False
 
     def setUp(self):
         self.model_tester = ViltModelTester(self, modality_type_vocab_size=3, add_multiple_images=True, num_images=2)

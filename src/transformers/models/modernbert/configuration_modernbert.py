@@ -22,98 +22,48 @@
 from typing import Literal
 
 from ...configuration_utils import PreTrainedConfig, layer_type_validation
-from ...modeling_rope_utils import RopeParameters, RotaryEmbeddingConfigMixin
+from ...modeling_rope_utils import RopeParameters
+from ...utils import auto_docstring, logging
 
 
-class ModernBertConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
+logger = logging.get_logger(__name__)
+
+
+@auto_docstring(checkpoint="answerdotai/ModernBERT-base")
+class ModernBertConfig(PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`ModernBertModel`]. It is used to instantiate an ModernBert
-    model according to the specified arguments, defining the model architecture. Instantiating a configuration with the
-    defaults will yield a similar configuration to that of the ModernBERT-base.
-    e.g. [answerdotai/ModernBERT-base](https://huggingface.co/answerdotai/ModernBERT-base)
-
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information.
-
-    Args:
-        vocab_size (`int`, *optional*, defaults to 50368):
-            Vocabulary size of the ModernBert model. Defines the number of different tokens that can be represented by the
-            `inputs_ids` passed when calling [`ModernBertModel`]
-        hidden_size (`int`, *optional*, defaults to 768):
-            Dimension of the hidden representations.
-        intermediate_size (`int`, *optional*, defaults to 1152):
-            Dimension of the MLP representations.
-        num_hidden_layers (`int`, *optional*, defaults to 22):
-            Number of hidden layers in the Transformer decoder.
-        num_attention_heads (`int`, *optional*, defaults to 12):
-            Number of attention heads for each attention layer in the Transformer decoder.
-        hidden_activation (`str` or `function`, *optional*, defaults to `"gelu"`):
-            The non-linear activation function (function or string) in the decoder. Will default to `"gelu"`
-            if not specified.
-        max_position_embeddings (`int`, *optional*, defaults to 8192):
-            The maximum sequence length that this model might ever be used with.
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        initializer_cutoff_factor (`float`, *optional*, defaults to 2.0):
-            The cutoff factor for the truncated_normal_initializer for initializing all weight matrices.
-        norm_eps (`float`, *optional*, defaults to 1e-05):
-            The epsilon used by the rms normalization layers.
-        norm_bias (`bool`, *optional*, defaults to `False`):
-            Whether to use bias in the normalization layers.
-        pad_token_id (`int`, *optional*, defaults to 50283):
-            Padding token id.
-        eos_token_id (`int`, *optional*, defaults to 50282):
-            End of stream token id.
-        bos_token_id (`int`, *optional*, defaults to 50281):
-            Beginning of stream token id.
-        cls_token_id (`int`, *optional*, defaults to 50281):
-            Classification token id.
-        sep_token_id (`int`, *optional*, defaults to 50282):
-            Separation token id.
-        attention_bias (`bool`, *optional*, defaults to `False`):
-            Whether to use a bias in the query, key, value and output projection layers during self-attention.
-        attention_dropout (`float`, *optional*, defaults to 0.0):
-            The dropout ratio for the attention probabilities.
-        layer_types (`list`, *optional*):
-            Attention pattern for each layer.
-        rope_parameters (`dict`, *optional*):
-            Dictionary mapping attention patterns (`"full_attention"`, `"sliding_attention"`) to `RopeParameters`.
-            Each value should be a dictionary containing `rope_type` and optional scaling parameters.
-        local_attention (`int`, *optional*, defaults to 128):
-            The window size for local attention.
-        embedding_dropout (`float`, *optional*, defaults to 0.0):
-            The dropout ratio for the embeddings.
-        mlp_bias (`bool`, *optional*, defaults to `False`):
-            Whether to use bias in the MLP layers.
-        mlp_dropout (`float`, *optional*, defaults to 0.0):
-            The dropout ratio for the MLP layers.
-        decoder_bias (`bool`, *optional*, defaults to `True`):
-            Whether to use bias in the decoder layers.
-        classifier_pooling (`str`, *optional*, defaults to `"cls"`):
-            The pooling method for the classifier. Should be either `"cls"` or `"mean"`. In local attention layers, the
-            CLS token doesn't attend to all tokens on long sequences.
-        classifier_dropout (`float`, *optional*, defaults to 0.0):
-            The dropout ratio for the classifier.
-        classifier_bias (`bool`, *optional*, defaults to `False`):
-            Whether to use bias in the classifier.
-        classifier_activation (`str`, *optional*, defaults to `"gelu"`):
-            The activation function for the classifier.
-        deterministic_flash_attn (`bool`, *optional*, defaults to `False`):
-            Whether to use deterministic flash attention. If `False`, inference will be faster but not deterministic.
-        sparse_prediction (`bool`, *optional*, defaults to `False`):
-            Whether to use sparse prediction for the masked language model instead of returning the full dense logits.
-        sparse_pred_ignore_index (`int`, *optional*, defaults to -100):
-            The index to ignore for the sparse prediction.
-        reference_compile (`bool`, *optional*):
-            Whether to compile the layers of the model which were compiled during pretraining. If `None`, then parts of
-            the model will be compiled if 1) `triton` is installed, 2) the model is not on MPS, 3) the model is not
-            shared between devices, and 4) the model is not resized after initialization. If `True`, then the model may
-            be faster in some scenarios.
-        repad_logits_with_grad (`bool`, *optional*, defaults to `False`):
-            When True, ModernBertForMaskedLM keeps track of the logits' gradient when repadding for output. This only
-            applies when using Flash Attention 2 with passed labels. Otherwise output logits always have a gradient.
-        tie_word_embeddings (`bool`, *optional*, defaults to `True`):
-            Whether to tie weight embeddings
+    initializer_cutoff_factor (`float`, *optional*, defaults to 2.0):
+        The cutoff factor for the truncated_normal_initializer for initializing all weight matrices.
+    norm_eps (`float`, *optional*, defaults to 1e-05):
+        The epsilon used by the rms normalization layers.
+    norm_bias (`bool`, *optional*, defaults to `False`):
+        Whether to use bias in the normalization layers.
+    local_attention (`int`, *optional*, defaults to 128):
+        The window size for local attention.
+    embedding_dropout (`float`, *optional*, defaults to 0.0):
+        The dropout ratio for the embeddings.
+    mlp_dropout (`float`, *optional*, defaults to 0.0):
+        The dropout ratio for the MLP layers.
+    decoder_bias (`bool`, *optional*, defaults to `True`):
+        Whether to use bias in the decoder layers.
+    classifier_pooling (`str`, *optional*, defaults to `"cls"`):
+        The pooling method for the classifier. Should be either `"cls"` or `"mean"`. In local attention layers, the
+        CLS token doesn't attend to all tokens on long sequences.
+    classifier_bias (`bool`, *optional*, defaults to `False`):
+        Whether to use bias in the classifier.
+    classifier_activation (`str`, *optional*, defaults to `"gelu"`):
+        The activation function for the classifier.
+    deterministic_flash_attn (`bool`, *optional*, defaults to `False`):
+        Whether to use deterministic flash attention. If `False`, inference will be faster but not deterministic.
+    sparse_prediction (`bool`, *optional*, defaults to `False`):
+        Whether to use sparse prediction for the masked language model instead of returning the full dense logits.
+    sparse_pred_ignore_index (`int`, *optional*, defaults to -100):
+        The index to ignore for the sparse prediction.
+    reference_compile (`bool`, *optional*):
+        Whether to compile the layers of the model which were compiled during pretraining. If `None`, then parts of
+        the model will be compiled if 1) `triton` is installed, 2) the model is not on MPS, 3) the model is not
+        shared between devices, and 4) the model is not resized after initialization. If `True`, then the model may
+        be faster in some scenarios. This argument is deprecated and will be removed in a future version
 
     Examples:
 
@@ -134,6 +84,15 @@ class ModernBertConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
     keys_to_ignore_at_inference = ["past_key_values"]
     default_theta = {"global": 160_000.0, "local": 10_000.0}
 
+    def __setattr__(self, name, value):
+        if name == "reference_compile" and value is not None:
+            logger.warning_once(
+                "The `reference_compile` argument is deprecated and will be removed in `transformers v5.2.0`"
+                "Use `torch.compile()` directly on the model instead."
+            )
+            value = None
+        super().__setattr__(name, value)
+
     def __init__(
         self,
         vocab_size: int | None = 50368,
@@ -145,7 +104,7 @@ class ModernBertConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
         max_position_embeddings: int | None = 8192,
         initializer_range: float | None = 0.02,
         initializer_cutoff_factor: float | None = 2.0,
-        norm_eps: int | None = 1e-5,
+        norm_eps: float | None = 1e-5,
         norm_bias: bool | None = False,
         pad_token_id: int | None = 50283,
         eos_token_id: int | None = 50282,
@@ -168,8 +127,7 @@ class ModernBertConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
         deterministic_flash_attn: bool | None = False,
         sparse_prediction: bool | None = False,
         sparse_pred_ignore_index: int | None = -100,
-        reference_compile: bool | None = None,
-        repad_logits_with_grad: bool | None = False,
+        reference_compile: bool | None = None,  # Deprecated
         tie_word_embeddings: bool | None = True,
         **kwargs,
     ):
@@ -205,7 +163,6 @@ class ModernBertConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
         self.sparse_prediction = sparse_prediction
         self.sparse_pred_ignore_index = sparse_pred_ignore_index
         self.reference_compile = reference_compile
-        self.repad_logits_with_grad = repad_logits_with_grad
 
         if self.classifier_pooling not in ["cls", "mean"]:
             raise ValueError(
@@ -262,6 +219,16 @@ class ModernBertConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
         output = super().to_dict()
         output.pop("reference_compile", None)
         return output
+
+    @property
+    def sliding_window(self):
+        """Half-window size: `local_attention` is the total window, so we divide by 2."""
+        return self.local_attention // 2
+
+    @sliding_window.setter
+    def sliding_window(self, value):
+        """Set sliding_window by updating local_attention to 2 * value."""
+        self.local_attention = value * 2
 
 
 __all__ = ["ModernBertConfig"]

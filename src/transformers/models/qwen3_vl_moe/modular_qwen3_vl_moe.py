@@ -18,13 +18,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ... import initialization as init
-from ...cache_utils import Cache
+from ...cache_utils import Cache, DynamicCache
 from ...configuration_utils import PreTrainedConfig
-from ...modeling_rope_utils import RopeParameters, RotaryEmbeddingConfigMixin
+from ...masking_utils import create_causal_mask
+from ...modeling_flash_attention_utils import FlashAttentionKwargs
+from ...modeling_outputs import MoeModelOutputWithPast
+from ...modeling_rope_utils import RopeParameters
 from ...modeling_utils import PreTrainedModel
 from ...processing_utils import Unpack
-from ...utils import TransformersKwargs, can_return_tuple, logging
-from ...utils.generic import OutputRecorder
+from ...utils import TransformersKwargs, auto_docstring, can_return_tuple, logging
+from ...utils.output_capturing import OutputRecorder
 from ..qwen3_moe.modeling_qwen3_moe import (
     Qwen3MoeDecoderLayer,
     Qwen3MoeExperts,
@@ -37,7 +40,7 @@ from ..qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig, Qwen3VLVisionConfig
 from ..qwen3_vl.modeling_qwen3_vl import (
     Qwen3VLCausalLMOutputWithPast,
     Qwen3VLForConditionalGeneration,
-    Qwen3VLModel,
+    Qwen3VLModelOutputWithPast,
     Qwen3VLTextAttention,
     Qwen3VLTextModel,
     Qwen3VLVisionAttention,
@@ -50,70 +53,15 @@ from ..qwen3_vl.modeling_qwen3_vl import (
 logger = logging.get_logger(__name__)
 
 
-class Qwen3VLMoeTextConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
+@auto_docstring(checkpoint="Qwen/Qwen3-VL-30B-A3B-Instruct")
+class Qwen3VLMoeTextConfig(PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`Qwen3VLMoeTextModel`]. It is used to instantiate a
-    Qwen3-VL-MOE model according to the specified arguments, defining the model architecture. Instantiating a configuration
-    with the defaults will yield a similar configuration to that of
-    Qwen3-VL-30B-A3B-Instruct [Qwen/Qwen3-VL-30B-A3B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Instruct).
-
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information.
-
-    Args:
-        vocab_size (`int`, *optional*, defaults to 151936):
-            Vocabulary size of the Qwen2MoE model. Defines the number of different tokens that can be represented by the
-            `inputs_ids` passed when calling [`Qwen2MoeModel`]
-        hidden_size (`int`, *optional*, defaults to 2048):
-            Dimension of the hidden representations.
-        intermediate_size (`int`, *optional*, defaults to 5632):
-            Dimension of the MLP representations.
-        num_hidden_layers (`int`, *optional*, defaults to 24):
-            Number of hidden layers in the Transformer encoder.
-        num_attention_heads (`int`, *optional*, defaults to 16):
-            Number of attention heads for each attention layer in the Transformer encoder.
-        num_key_value_heads (`int`, *optional*, defaults to 16):
-            This is the number of key_value heads that should be used to implement Grouped Query Attention. If
-            `num_key_value_heads=num_attention_heads`, the model will use Multi Head Attention (MHA), if
-            `num_key_value_heads=1` the model will use Multi Query Attention (MQA) otherwise GQA is used. When
-            converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed
-            by meanpooling all the original heads within that group. For more details checkout [this
-            paper](https://arxiv.org/pdf/2305.13245.pdf). If it is not specified, will default to `32`.
-        hidden_act (`str` or `function`, *optional*, defaults to `"silu"`):
-            The non-linear activation function (function or string) in the decoder.
-        max_position_embeddings (`int`, *optional*, defaults to 128000):
-            The maximum sequence length that this model might ever be used with.
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        rms_norm_eps (`float`, *optional*, defaults to 1e-06):
-            The epsilon used by the rms normalization layers.
-        use_cache (`bool`, *optional*, defaults to `True`):
-            Whether or not the model should return the last key/values attentions (not used by all models). Only
-            relevant if `config.is_decoder=True`.
-        attention_bias (`bool`, defaults to `False`, *optional*, defaults to `False`):
-            Whether to use a bias in the query, key, value and output projection layers during self-attention.
-        attention_dropout (`float`, *optional*, defaults to 0.0):
-            The dropout ratio for the attention probabilities.
-        decoder_sparse_step (`int`, *optional*, defaults to 1):
-            The frequency of the MoE layer.
-        moe_intermediate_size (`int`, *optional*, defaults to 1408):
-            Intermediate size of the routed expert.
-        num_experts_per_tok (`int`, *optional*, defaults to 4):
-            Number of selected experts.
-        num_experts (`int`, *optional*, defaults to 60):
-            Number of routed experts.
-        mlp_only_layers (`List[int]`, *optional*, defaults to `[]`):
-            Indicate which layers use Qwen3VLMoeMLP rather than Qwen3VLMoeSparseMoeBlock
-            The list contains layer index, from 0 to num_layers-1 if we have num_layers layers
-            If `mlp_only_layers` is empty, `decoder_sparse_step` is used to determine the sparsity.
-        rope_parameters (`RopeParameters`, *optional*):
-            Dictionary containing the configuration parameters for the RoPE embeddings. The dictionary should contain
-            a value for `rope_theta` and optionally parameters used for scaling in case you want to use RoPE
-            with longer `max_position_embeddings`.
-        head_dim (`int`, *optional*):
-            The dimension of the head. If not specified, will default to `hidden_size // num_attention_heads`.
-        pad_token_id (`int`, *optional*):
-            The id of the padding token.
+    decoder_sparse_step (`int`, *optional*, defaults to 1):
+        The frequency of the MoE layer.
+    mlp_only_layers (`List[int]`, *optional*, defaults to `[]`):
+        Indicate which layers use Qwen3VLMoeMLP rather than Qwen3VLMoeSparseMoeBlock
+        The list contains layer index, from 0 to num_layers-1 if we have num_layers layers
+        If `mlp_only_layers` is empty, `decoder_sparse_step` is used to determine the sparsity.
 
     ```python
     >>> from transformers import Qwen3VLMoeForConditionalGeneration, Qwen3VLMoeConfig
@@ -208,36 +156,15 @@ class Qwen3VLMoeTextConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
         )
 
 
+@auto_docstring(checkpoint="Qwen/Qwen3-VL-30B-A3B-Instruct")
 class Qwen3VLMoeVisionConfig(Qwen3VLVisionConfig):
     pass
 
 
+@auto_docstring(checkpoint="Qwen/Qwen3-VL-30B-A3B-Instruct")
 class Qwen3VLMoeConfig(Qwen3VLConfig):
     r"""
-    This is the configuration class to store the configuration of a [`Qwen3VLMoeModel`]. It is used to instantiate a
-    Qwen3-VL-MOE model according to the specified arguments, defining the model architecture. Instantiating a configuration
-    with the defaults will yield a similar configuration to that of
-    Qwen3-VL-30B-A3B-Instruct [Qwen/Qwen3-VL-30B-A3B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Instruct).
-
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information.
-
-
-    Args:
-        text_config (`Union[PreTrainedConfig, dict]`, *optional*, defaults to `Qwen3VLMoeTextConfig`):
-            The config object or dictionary of the text backbone.
-        vision_config (`Union[PreTrainedConfig, dict]`,  *optional*, defaults to `Qwen3VLMoeVisionConfig`):
-            The config object or dictionary of the vision backbone.
-        image_token_id (`int`, *optional*, defaults to 151655):
-            The image token index to encode the image prompt.
-        video_token_id (`int`, *optional*, defaults to 151656):
-            The video token index to encode the image prompt.
-        vision_start_token_id (`int`, *optional*, defaults to 151652):
-            The start token index to encode the image prompt.
-        vision_end_token_id (`int`, *optional*, defaults to 151653):
-            The end token index to encode the image prompt.
-        tie_word_embeddings (`bool`, *optional*, defaults to `False`):
-            Whether the model's input and output word embeddings should be tied.
+    Example:
 
     ```python
     >>> from transformers import Qwen3VLMoeForConditionalGeneration, Qwen3VLMoeConfig
@@ -297,6 +224,7 @@ class Qwen3VLMoeTextDecoderLayer(Qwen3MoeDecoderLayer):
 
 class Qwen3VLMoePreTrainedModel(Qwen3MoePreTrainedModel):
     config: Qwen3VLMoeConfig
+    input_modalities = ("text", "image", "video")
     _no_split_modules = ["Qwen3VLMoeTextDecoderLayer", "Qwen3VLMoeVisionBlock"]
 
     @torch.no_grad()
@@ -338,15 +266,99 @@ class Qwen3VLMoeVisionModel(Qwen3VLVisionModel):
 
 
 class Qwen3VLMoeTextModel(Qwen3VLTextModel):
-    pass
+    def forward(
+        self,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_values: Cache | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        use_cache: bool | None = None,
+        # args for deepstack
+        visual_pos_masks: torch.Tensor | None = None,
+        deepstack_visual_embeds: list[torch.Tensor] | None = None,
+        **kwargs: Unpack[FlashAttentionKwargs],
+    ) -> tuple | MoeModelOutputWithPast:
+        r"""
+        visual_pos_masks (`torch.Tensor` of shape `(batch_size, seqlen)`, *optional*):
+            The mask of the visual positions.
+        deepstack_visual_embeds (`list[torch.Tensor]`, *optional*):
+            The deepstack visual embeddings. The shape is (num_layers, visual_seqlen, embed_dim).
+            The feature is extracted from the different visual encoder layers, and fed to the decoder
+            hidden states. It's from the paper DeepStack(https://arxiv.org/abs/2406.04334).
+        """
+        if (input_ids is None) ^ (inputs_embeds is not None):
+            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+
+        # torch.jit.trace() doesn't support cache objects in the output
+        if use_cache and past_key_values is None and not torch.jit.is_tracing():
+            past_key_values = DynamicCache(config=self.config)
+
+        if inputs_embeds is None:
+            inputs_embeds = self.embed_tokens(input_ids)
+
+        # the hard coded `4` is for text, temporal, height and width.
+        if position_ids is None:
+            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+            position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device) + past_seen_tokens
+            position_ids = position_ids.view(1, 1, -1).expand(4, inputs_embeds.shape[0], -1)
+        elif position_ids.ndim == 2:
+            position_ids = position_ids[None, ...].expand(4, position_ids.shape[0], -1)
+
+        if position_ids.ndim == 3 and position_ids.shape[0] == 4:
+            text_position_ids = position_ids[0]
+            position_ids = position_ids[1:]
+        else:
+            text_position_ids = None
+
+        attention_mask = create_causal_mask(
+            config=self.config,
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            past_key_values=past_key_values,
+            position_ids=text_position_ids,
+        )
+
+        hidden_states = inputs_embeds
+
+        # create position embeddings to be shared across the decoder layers
+        position_embeddings = self.rotary_emb(hidden_states, position_ids)
+
+        # decoder layers
+        for layer_idx, decoder_layer in enumerate(self.layers):
+            layer_outputs = decoder_layer(
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=text_position_ids,
+                past_key_values=past_key_values,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+            hidden_states = layer_outputs
+
+            # add visual features to the hidden states of first several layers
+            if deepstack_visual_embeds is not None and layer_idx in range(len(deepstack_visual_embeds)):
+                hidden_states = self._deepstack_process(
+                    hidden_states,
+                    visual_pos_masks,
+                    deepstack_visual_embeds[layer_idx],
+                )
+
+        hidden_states = self.norm(hidden_states)
+
+        return MoeModelOutputWithPast(  # only diff with Qwen3VLTextModel
+            last_hidden_state=hidden_states,
+            past_key_values=past_key_values,
+        )
+
+
+class Qwen3VLMoeModelOutputWithPast(Qwen3VLModelOutputWithPast):
+    router_logits: tuple[torch.FloatTensor] | None = None
 
 
 class Qwen3VLMoeCausalLMOutputWithPast(Qwen3VLCausalLMOutputWithPast):
+    router_logits: tuple[torch.FloatTensor] | None = None
     aux_loss: torch.FloatTensor | None = None
-
-
-class Qwen3VLMoeModel(Qwen3VLModel):
-    pass
 
 
 class Qwen3VLMoeForConditionalGeneration(Qwen3VLForConditionalGeneration):
@@ -363,10 +375,10 @@ class Qwen3VLMoeForConditionalGeneration(Qwen3VLForConditionalGeneration):
         pixel_values_videos: torch.FloatTensor | None = None,
         image_grid_thw: torch.LongTensor | None = None,
         video_grid_thw: torch.LongTensor | None = None,
-        cache_position: torch.LongTensor | None = None,
+        mm_token_type_ids: torch.IntTensor | None = None,
         logits_to_keep: int | torch.Tensor = 0,
         **kwargs: Unpack[TransformersKwargs],
-    ):
+    ) -> tuple | Qwen3VLMoeCausalLMOutputWithPast:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
@@ -425,11 +437,11 @@ class Qwen3VLMoeForConditionalGeneration(Qwen3VLForConditionalGeneration):
             pixel_values_videos=pixel_values_videos,
             image_grid_thw=image_grid_thw,
             video_grid_thw=video_grid_thw,
+            mm_token_type_ids=mm_token_type_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
-            cache_position=cache_position,
             **kwargs,
         )
 
@@ -464,6 +476,7 @@ class Qwen3VLMoeForConditionalGeneration(Qwen3VLForConditionalGeneration):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
             rope_deltas=outputs.rope_deltas,
+            router_logits=outputs.router_logits,
         )
 
 
@@ -472,7 +485,7 @@ __all__ = [
     "Qwen3VLMoeTextConfig",
     "Qwen3VLMoeVisionModel",
     "Qwen3VLMoeForConditionalGeneration",
-    "Qwen3VLMoeModel",
+    "Qwen3VLMoeModel",  # noqa
     "Qwen3VLMoePreTrainedModel",
     "Qwen3VLMoeTextModel",
 ]

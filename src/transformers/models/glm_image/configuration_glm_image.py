@@ -19,29 +19,15 @@
 # limitations under the License.
 
 from ...configuration_utils import PreTrainedConfig
-from ...modeling_rope_utils import RopeParameters, RotaryEmbeddingConfigMixin
+from ...modeling_rope_utils import RopeParameters
+from ...utils import auto_docstring
 
 
+@auto_docstring(checkpoint="zai-org/GLM-Image")
 class GlmImageVQVAEConfig(PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`GlmImageVQModel`]. It is used to instantiate a
-    `GlmImageVQModel` according to the specified arguments, defining the model architecture.
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information. Instantiating a
-    configuration with the defaults will yield a similar configuration to the VQModel of the
-    [zai-org/GLM-Image](https://huggingface.co/zai-org/GLM-Image) architecture.
-
-    Args:
-        embed_dim (`int`, *optional*, defaults to 2048):
-            Dimensionality of each embedding vector.
-        num_embeddings (`int`, *optional*, defaults to 16384):
-            Number of codebook embeddings.
-        latent_channels (`int`, *optional*, defaults to 1536):
-            Number of channels for the latent space.
-        in_channels (`int`, *optional*, defaults to 3):
-            Number of input channels.
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
+    num_embeddings (`int`, *optional*, defaults to 16384):
+        Number of codebook embeddings.
     """
 
     model_type = "glm_image_vqmodel"
@@ -64,42 +50,26 @@ class GlmImageVQVAEConfig(PreTrainedConfig):
         self.initializer_range = initializer_range
 
 
+@auto_docstring(checkpoint="zai-org/GLM-Image")
 class GlmImageVisionConfig(PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`GlmImageVisionModel`]. It is used to instantiate an GlmImageVisionModel
-    model according to the specified arguments, defining the model architecture. Instantiating a configuration with the defaults will yield
-    a similar configuration to that of
-    GLM-Image [zai-org/GLM-Image](https://huggingface.co/zai-org/GLM-Image).
+    out_hidden_size (`int`, *optional*, defaults to 4096):
+        The output hidden size of the vision model.
 
-    Args:
-        depth (`int`, *optional*, defaults to 40):
-            Number of layers (depth) in the model.
-        hidden_size (`int`, *optional*, defaults to 1536):
-            Dimensionality of the encoder layers and the pooler layer.
-        hidden_act (`str` or `function`, *optional*, defaults to `"gelu"`):
-            The non-linear activation function (function or string) in the encoder and pooler. If string, `"gelu"`,
-            `"relu"`, `"selu"` and `"gelu_new"` are supported.
-        attention_bias (`bool`, *optional*, defaults to `True`):
-            Whether to add a bias to the queries, keys and values.
-        attention_dropout (`float`, *optional*, defaults to 0.0):
-            Dropout probability for attention weights.
-        num_heads (`int`, *optional*, defaults to 16):
-            Number of attention heads for each attention layer in the Transformer architecture.
-        in_channels (`int`, *optional*, defaults to 3):
-            Number of input channels.
-        image_size (`int` or `list[int]`, *optional*, defaults to 2048):
-                The size (resolution) of each image.
-        patch_size (`int`, *optional*, defaults to 16):
-            The size (resolution) of each patch.
-        layer_norm_eps (`float`, *optional*, defaults to 1e-06):
-            The epsilon used by the layer normalization layers.
-        spatial_merge_size (`int`, *optional*, defaults to 1):
-            The size used for merging spatial dimensions.
-        intermediate_size (`int`, *optional*, defaults to 6144):
-            Dimensionality of the "intermediate" (i.e., feed-forward) layer in the Transformer encoder.
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-    """
+    Example:
+
+    ```python
+    >>> from transformers import GlmImageVisionConfig, GlmImageVisionModel
+
+    >>> # Initializing a GlmImageVisionConfig GLM-4.1V-9B style configuration
+    >>> configuration = GlmImageVisionConfig()
+
+    >>> # Initializing a model (with random weights) from the GLM-4.1V-9B configuration
+    >>> model = GlmImageVisionModel(configuration)
+
+    >>> # Accessing the model configuration
+    >>> configuration = model.config
+    ```"""
 
     model_type = "glm_image_vision"
     base_config_key = "vision_config"
@@ -138,59 +108,14 @@ class GlmImageVisionConfig(PreTrainedConfig):
         self.layer_norm_eps = layer_norm_eps
 
 
-class GlmImageTextConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
+@auto_docstring(checkpoint="zai-org/GLM-Image")
+class GlmImageTextConfig(PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`GlmImageTextModel`]. It is used to instantiate a
-    GLM-Image model according to the specified arguments, defining the model architecture. Instantiating a
-    configuration with the defaults will yield a similar configuration to that of
-    GLM-Image [zai-org/GLM-Image](https://huggingface.co/zai-org/GLM-Image).
+    vision_vocab_size (`int`, *optional*, defaults to 16512):
+        Vision vocabulary size of the GlmImage model. Defines the number of different tokens that can be
+        represented by the `inputs_ids` passed when calling [`GlmImageVisionModel`]
 
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information.
-
-    Args:
-        vocab_size (`int`, *optional*, defaults to 168064):
-            Vocabulary size of the GlmImage model. Defines the number of different tokens that can be represented by the
-            `inputs_ids` passed when calling [`GlmImageModel`]
-        hidden_size (`int`, *optional*, defaults to 4096):
-            Dimension of the hidden representations.
-        intermediate_size (`int`, *optional*, defaults to 13696):
-            Dimension of the MLP representations.
-        num_hidden_layers (`int`, *optional*, defaults to 40):
-            Number of hidden layers in the Transformer encoder.
-        num_attention_heads (`int`, *optional*, defaults to 32):
-            Number of attention heads for each attention layer in the Transformer encoder.
-        num_key_value_heads (`int`, *optional*, defaults to 2):
-            This is the number of key_value heads that should be used to implement Grouped Query Attention. If
-            `num_key_value_heads=num_attention_heads`, the model will use Multi Head Attention (MHA), if
-            `num_key_value_heads=1` the model will use Multi Query Attention (MQA) otherwise GQA is used. When
-            converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed
-            by meanpooling all the original heads within that group. For more details checkout [this
-            paper](https://huggingface.co/papers/2305.13245). If it is not specified, will default to `32`.
-        hidden_act (`str` or `function`, *optional*, defaults to `"silu"`):
-            The non-linear activation function (function or string) in the decoder.
-        max_position_embeddings (`int`, *optional*, defaults to 32768):
-            The maximum sequence length that this model might ever be used with.
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        rms_norm_eps (`float`, *optional*, defaults to 1e-05):
-            The epsilon used by the rms normalization layers.
-        use_cache (`bool`, *optional*, defaults to `True`):
-            Whether or not the model should return the last key/values attentions (not used by all models). Only
-            relevant if `config.is_decoder=True`.
-        attention_dropout (`float`, *optional*, defaults to 0.0):
-            The dropout ratio for the attention probabilities.
-        rope_parameters (`RopeParameters`, *optional*):
-            Dictionary containing the configuration parameters for the RoPE embeddings. The dictionary should contain
-            a value for `rope_theta` and optionally parameters used for scaling in case you want to use RoPE
-            with longer `max_position_embeddings`.
-        vision_vocab_size (`int`, *optional*, defaults to 16512):
-            Vision vocabulary size of the GlmImage model. Defines the number of different tokens that can be represented
-            by the `inputs_ids` passed when calling [`GlmImageVisionModel`]
-        attention_bias (`bool`, *optional*, defaults to `True`):
-            Whether to add a bias to the queries, keys and values.
-        pad_token_id (`int`, *optional*):
-            The id of the padding token.
+    Example:
 
     ```python
     >>> from transformers import GlmImageTextModel, GlmImageConfig
@@ -214,8 +139,8 @@ class GlmImageTextConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
         "layers.*.self_attn.k_proj": "colwise",
         "layers.*.self_attn.v_proj": "colwise",
         "layers.*.self_attn.o_proj": "rowwise",
-        "layers.*.mlp.gate_up_proj": "colwise_rep",  # we need to replicate here due to the `chunk` operation
-        "layers.*.mlp.down_proj": "rowwise_rep",  # we need to replicate here due to the `chunk` operation
+        "layers.*.mlp.gate_up_proj": "colwise_gather_output",  # we need to replicate here due to the `chunk` operation
+        "layers.*.mlp.down_proj": "rowwise_split_input",  # input is replicated due to the `chunk` operation
     }
     base_model_pp_plan = {
         "embed_tokens": (["input_ids"], ["inputs_embeds"]),
@@ -225,27 +150,25 @@ class GlmImageTextConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
 
     def __init__(
         self,
-        vocab_size: int | None = 168064,
+        vocab_size: int = 168064,
         hidden_size: int | None = 4096,
         intermediate_size: int | None = 13696,
         num_hidden_layers: int | None = 40,
         num_attention_heads: int | None = 32,
         num_key_value_heads: int | None = 2,
         hidden_act: str | None = "silu",
-        max_position_embeddings: int | None = 32768,
+        max_position_embeddings: int = 131072,
         initializer_range: float | None = 0.02,
         rms_norm_eps: int | None = 1e-05,
         use_cache: bool | None = True,
         attention_dropout: float | None = 0.0,
         rope_parameters: RopeParameters | dict[str, RopeParameters] | None = None,
-        pad_token_id: int | None = None,
-        vision_vocab_size: int | None = 16512,
-        attention_bias: bool | None = True,
+        pad_token_id: int = 167841,
+        vision_vocab_size: int = 16512,
+        attention_bias: bool = True,
+        eos_token_id: int = 16385,
         **kwargs,
     ):
-        self.vocab_size = vocab_size
-        self.vision_vocab_size = vision_vocab_size
-        self.attention_bias = attention_bias
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = hidden_size
@@ -267,33 +190,18 @@ class GlmImageTextConfig(PreTrainedConfig, RotaryEmbeddingConfigMixin):
         self.pad_token_id = pad_token_id
 
         super().__init__(ignore_keys_at_rope_validation={"mrope_section"}, **kwargs)
+        self.vision_vocab_size = vision_vocab_size
+        self.attention_bias = attention_bias
+        self.eos_token_id = eos_token_id
 
 
+@auto_docstring(checkpoint="zai-org/GLM-Image")
 class GlmImageConfig(PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`GlmImageModel`]. It is used to instantiate a
-    GLM-Image model according to the specified arguments, defining the model architecture. Instantiating a
-    configuration with the defaults will yield a similar configuration to that of
-    GLM-Image [zai-org/GLM-Image](https://huggingface.co/zai-org/GLM-Image) architecture.
-
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information.
-
-    Args:
-        text_config (`Union[PreTrainedConfig, dict]`, *optional*, defaults to `GlmImageTextConfig`):
-            The config object or dictionary of the text backbone.
-        vision_config (`Union[PreTrainedConfig, dict]`,  *optional*, defaults to `GlmImageVisionConfig`):
-            The config object or dictionary of the vision backbone.
-        vq_config (`Union[Dict, GlmImageVQVAEConfig]`, *optional*):
-            GlmImageVQVAEConfig instance containing the configuration for the VQ-VAE model.
-        image_token_id (`int`, *optional*, defaults to 167855):
-            The image token index to encode the image prompt.
-        image_start_token_id (`int`, *optional*, defaults to 16384):
-            The image start token index to encode the start of image.
-        image_end_token_id (`int`, *optional*, defaults to 16385):
-            The image end token index to encode the end of image.
-        tie_word_embeddings (`bool`, *optional*, defaults to `False`):
-            Whether the model's input and output word embeddings should be tied.
+    image_start_token_id (`int`, *optional*, defaults to 16384):
+        The image start token index to encode the start of image.
+    image_end_token_id (`int`, *optional*, defaults to 16385):
+        The image end token index to encode the end of image.
 
     ```python
     >>> from transformers import Glm4vForConditionalGeneration, Glm4vConfig

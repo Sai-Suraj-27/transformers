@@ -15,7 +15,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from tokenizers import normalizers
 
+from transformers.models.gemma.tokenization_gemma import GemmaTokenizer
 from transformers.models.siglip.configuration_siglip import SiglipConfig, SiglipTextConfig, SiglipVisionConfig
 from transformers.models.siglip.modeling_siglip import (
     BaseModelOutput,
@@ -33,51 +35,67 @@ from transformers.models.siglip.modeling_siglip import (
     SiglipVisionTransformer,
 )
 
-from ...modeling_attn_mask_utils import _prepare_4d_attention_mask
+from ...masking_utils import create_bidirectional_mask
 from ...processing_utils import Unpack
-from ...utils import TransformersKwargs, auto_docstring, can_return_tuple
-from ...utils.generic import check_model_inputs, is_flash_attention_requested
+from ...utils import (
+    TransformersKwargs,
+    auto_docstring,
+    can_return_tuple,
+    torch_compilable_check,
+)
+from ...utils.generic import merge_with_config_defaults
+from ...utils.output_capturing import capture_outputs
 
 
+class Siglip2Tokenizer(GemmaTokenizer):
+    """
+    Gemma tokenizer + SigLIP2 training default: lowercase normalization.
+    """
+
+    def __init__(
+        self,
+        vocab: str | dict[str, int] | None = None,
+        merges: str | list[str] | None = None,
+        unk_token: str = "<unk>",
+        bos_token: str = "<bos>",
+        eos_token: str = "<eos>",
+        pad_token: str = "<pad>",
+        mask_token: str = "<mask>",
+        **kwargs,
+    ):
+        super().__init__(
+            vocab=vocab,
+            merges=merges,
+            unk_token=unk_token,
+            bos_token=bos_token,
+            eos_token=eos_token,
+            pad_token=pad_token,
+            mask_token=mask_token,
+            **kwargs,
+        )
+
+        # Persist for save/load + push_to_hub dynamic tokenizer test
+        if hasattr(self, "init_kwargs") and isinstance(self.init_kwargs, dict):
+            self.init_kwargs.setdefault("tokenizer_class", self.__class__.__name__)
+
+        backend = getattr(self, "_tokenizer", None)
+        if backend is not None and backend.normalizer is not None:
+            backend.normalizer = normalizers.Sequence([normalizers.Lowercase(), backend.normalizer])
+
+
+@auto_docstring(checkpoint="google/siglip2-base-patch16-naflex")
 class Siglip2TextConfig(SiglipTextConfig):
     pass
 
 
+@auto_docstring(checkpoint="google/siglip2-base-patch16-naflex")
 class Siglip2VisionConfig(SiglipVisionConfig):
     r"""
-    This is the configuration class to store the configuration of a [`Siglip2VisionModel`]. It is used to instantiate a
-    Siglip2 vision encoder according to the specified arguments, defining the model architecture. Instantiating a
-    configuration with the defaults will yield a similar configuration to that of the vision encoder of the Siglip2
-    [google/siglip2-base-patch16-naflex](https://huggingface.co/google/siglip2-base-patch16-naflex) architecture.
-
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information.
-
-    Args:
-        hidden_size (`int`, *optional*, defaults to 768):
-            Dimensionality of the encoder layers and the pooler layer.
-        intermediate_size (`int`, *optional*, defaults to 3072):
-            Dimensionality of the "intermediate" (i.e., feed-forward) layer in the Transformer encoder.
-        num_hidden_layers (`int`, *optional*, defaults to 12):
-            Number of hidden layers in the Transformer encoder.
-        num_attention_heads (`int`, *optional*, defaults to 12):
-            Number of attention heads for each attention layer in the Transformer encoder.
-        num_channels (`int`, *optional*, defaults to 3):
-            Number of channels in the input images.
-        num_patches (`int`, *optional*, defaults to 256):
-            The number of patches in the image with the size of (`patch_size`, `patch_size`).
-            The image is resized to fill maximum of this number of patches, and to preserve
-            the aspect ratio. In case the resulted number of patches is lower, the image is
-            padded in "patch" dimension.
-        patch_size (`int`, *optional*, defaults to 16):
-            The size (resolution) of each patch.
-        hidden_act (`str` or `function`, *optional*, defaults to `"gelu_pytorch_tanh"`):
-            The non-linear activation function (function or string) in the encoder and pooler. If string, `"gelu"`,
-            `"relu"`, `"selu"` and `"gelu_new"` `"quick_gelu"` are supported.
-        layer_norm_eps (`float`, *optional*, defaults to 1e-06):
-            The epsilon used by the layer normalization layers.
-        attention_dropout (`float`, *optional*, defaults to 0.0):
-            The dropout ratio for the attention probabilities.
+    num_patches (`int`, *optional*, defaults to 256):
+        The number of patches in the image with the size of (`patch_size`, `patch_size`).
+        The image is resized to fill maximum of this number of patches, and to preserve
+        the aspect ratio. In case the resulted number of patches is lower, the image is
+        padded in "patch" dimension.
 
     Example:
 
@@ -113,6 +131,7 @@ class Siglip2VisionConfig(SiglipVisionConfig):
         del self.image_size
 
 
+@auto_docstring(checkpoint="google/siglip2-base-patch16-naflex")
 class Siglip2Config(SiglipConfig):
     pass
 
@@ -184,7 +203,10 @@ class Siglip2VisionEmbeddings(nn.Module):
 
         for i in range(batch_size):
             # (1, dim, height, width) -> (1, dim, target_height, target_width)
-            height, width = spatial_shapes[i]
+            height, width = spatial_shapes[i].tolist()  # will be itemized in F.interpolate either way
+            torch_compilable_check((width > 0), "Width of resized positional embeddings must be positive.")
+            torch_compilable_check((height > 0), "Height of resized positional embeddings must be positive.")
+            torch_compilable_check((height * width) <= max_length, "Resized positional embeddings exceed max_length.")
             resized_embeddings = F.interpolate(
                 positional_embeddings,
                 size=(height, width),
@@ -231,7 +253,9 @@ class Siglip2VisionEmbeddings(nn.Module):
 
 
 class Siglip2PreTrainedModel(SiglipPreTrainedModel):
-    pass
+    # nn.MultiHeadAttention mask doesn't allow for non 4d mask
+    _supports_flex_attn = False
+    _supports_flash_attn = False
 
 
 class Siglip2VisionTransformer(SiglipVisionTransformer):
@@ -259,11 +283,11 @@ class Siglip2VisionTransformer(SiglipVisionTransformer):
 
         hidden_states = self.embeddings(pixel_values, spatial_shapes)
 
-        if attention_mask is not None and not is_flash_attention_requested(self.config):
-            # [batch_size, seq_len] -> [batch_size, 1, tgt_seq_len, src_seq_len]
-            encoder_attention_mask = _prepare_4d_attention_mask(attention_mask, hidden_states.dtype)
-        else:
-            encoder_attention_mask = attention_mask
+        encoder_attention_mask = create_bidirectional_mask(
+            config=self.config,
+            inputs_embeds=hidden_states,
+            attention_mask=attention_mask,
+        )
 
         encoder_outputs: BaseModelOutput = self.encoder(
             inputs_embeds=hidden_states,
@@ -292,6 +316,8 @@ class Siglip2TextModel(SiglipTextModel):
 class Siglip2MultiheadAttentionPoolingHead(SiglipMultiheadAttentionPoolingHead):
     def __init__(self, config: Siglip2VisionConfig):
         super().__init__(config)
+
+        self.config = config
         self.num_heads = config.num_attention_heads
 
     def forward(self, hidden_state: torch.Tensor, attention_mask: torch.Tensor | None = None) -> torch.Tensor:
@@ -300,9 +326,23 @@ class Siglip2MultiheadAttentionPoolingHead(SiglipMultiheadAttentionPoolingHead):
 
         if attention_mask is not None:
             target_len, source_len = probe.shape[1], hidden_state.shape[1]
-            attention_mask = _prepare_4d_attention_mask(attention_mask, hidden_state.dtype, target_len)
-            attention_mask = attention_mask.repeat(1, self.num_heads, target_len, 1)
-            attention_mask = attention_mask.reshape(-1, target_len, source_len)
+            attention_mask = create_bidirectional_mask(
+                config=self.config,
+                inputs_embeds=probe,
+                attention_mask=attention_mask,
+                encoder_hidden_states=hidden_state,
+            )
+            if attention_mask is not None:
+                attention_mask = attention_mask.repeat(1, self.num_heads, target_len, 1)
+                attention_mask = attention_mask.reshape(-1, target_len, source_len)
+
+                # `nn.MultiheadAttention` cannot handle boolean masks (which SDPA can)
+                if attention_mask.dtype == torch.bool:
+                    attention_mask = torch.where(
+                        attention_mask,
+                        torch.tensor(0.0, device=attention_mask.device, dtype=probe.dtype),
+                        torch.finfo(probe.dtype).min,
+                    )
 
         hidden_state = self.attention(probe, hidden_state, hidden_state, attn_mask=attention_mask)[0]
 
@@ -315,7 +355,8 @@ class Siglip2MultiheadAttentionPoolingHead(SiglipMultiheadAttentionPoolingHead):
 
 class Siglip2VisionModel(SiglipVisionModel):
     # Update: add `spatial_shapes` and `pixel_attention_mask`
-    @check_model_inputs(tie_last_hidden_states=False)
+    @merge_with_config_defaults
+    @capture_outputs(tie_last_hidden_states=False)
     @auto_docstring
     def forward(
         self,
@@ -606,4 +647,5 @@ __all__ = [
     "Siglip2TextModel",
     "Siglip2VisionModel",
     "Siglip2ForImageClassification",
+    "Siglip2Tokenizer",
 ]

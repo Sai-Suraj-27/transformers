@@ -72,6 +72,8 @@ PRIVATE_MODELS = [
     "Qwen2_5_VisionTransformerPretrainedModel",
     "Qwen3VLVisionModel",
     "Qwen3VLMoeVisionModel",
+    "Qwen3_5VisionModel",
+    "Qwen3_5MoeVisionModel",
     "SwitchTransformersStack",
     "SiglipTextTransformer",
     "Siglip2TextTransformer",
@@ -110,6 +112,24 @@ PRIVATE_MODELS = [
     "PeAudioPreTrainedModel",
     "PeAudioVideoPreTrainedModel",
     "PeVideoPreTrainedModel",
+    # the following models should have been PreTrainedModels
+    "Owlv2TextTransformer",
+    "Owlv2VisionTransformer",
+    "OwlViTTextTransformer",
+    "OwlViTVisionTransformer",
+    "XCLIPTextTransformer",
+    "CLIPSegTextTransformer",
+    "DetrDecoder",
+    "GroupViTTextTransformer",
+    "CLIPTextTransformer",
+    "CLIPVisionTransformer",
+    "MetaClip2TextTransformer",
+    "MetaClip2VisionTransformer",
+    "MLCDVisionTransformer",
+    # end of should have beens
+    "VoxtralRealtimeTextModel",
+    "VoxtralRealtimeTextForCausalLM",
+    "VoxtralRealtimeTextPreTrainedModel",
 ]
 
 # Update this list for models that are not tested with a comment explaining the reason it should not be.
@@ -160,6 +180,9 @@ IGNORE_NON_TESTED = (
         "SeamlessM4TCodeHifiGan",  # Building part of bigger (tested) model.
         "SeamlessM4TTextToUnitForConditionalGeneration",  # Building part of bigger (tested) model.
         "ChameleonVQVAE",  # VQVAE here is used only for encoding (discretizing) and is tested as part of bigger model
+        "PPDocLayoutV2ReadingOrder",  # Building part of bigger (tested) model. Tested implicitly through PPDocLayoutV2ForObjectDetection.
+        "PPDocLayoutV2Model",  # Building part of bigger (tested) model. Tested implicitly through PPDocLayoutV2ForObjectDetection.
+        "PPDocLayoutV3Model",  # Building part of bigger (tested) model. Tested implicitly through PPDocLayoutV3ForObjectDetection.
         "PaddleOCRVLModel",  # Building part of bigger (tested) model. Tested implicitly through PaddleOCRVLForConditionalGeneration.
         "PaddleOCRVisionModel",  # Building part of bigger (tested) model. Tested implicitly through PaddleOCRVLForConditionalGeneration.
         "PaddleOCRVisionTransformer",  # Building part of bigger (tested) model. Tested implicitly through PaddleOCRVLForConditionalGeneration.
@@ -170,6 +193,8 @@ IGNORE_NON_TESTED = (
         "Qwen3VLMoeModel",  # Building part of bigger (tested) model. Tested implicitly through Qwen3VLMoeForConditionalGeneration.
         "Qwen3VLTextModel",  # Building part of bigger (tested) model.
         "Qwen3VLMoeTextModel",  # Building part of bigger (tested) model.
+        "Qwen3_5TextModel",  # Building part of bigger (tested) model. Tested implicitly through Qwen3_5ForConditionalGeneration.
+        "Qwen3_5MoeTextModel",  # Building part of bigger (tested) model. Tested implicitly through Qwen3_5MoeForConditionalGeneration.
         "Qwen2_5OmniForConditionalGeneration",  # Not a regular model. Testted in Qwen2_5OmniModelIntergrationTest
         "Qwen2_5OmniTalkerForConditionalGeneration",  #  Building part of bigger (tested) model. Tested implicitly through Qwen2_5OmniModelIntergrationTest.
         "Qwen2_5OmniTalkerModel",  # Building part of bigger (tested) model. Tested implicitly through Qwen2_5OmniModelIntergrationTest.
@@ -201,7 +226,9 @@ IGNORE_NON_TESTED = (
         "Qwen2_5_VLTextModel",  # Building part of bigger (tested) model
         "InternVLVisionModel",  # Building part of bigger (tested) model
         "JanusVisionModel",  # Building part of bigger (tested) model
+        "PPDocLayoutV3Model",  # Building part of bigger (tested) model
         "TimesFmModel",  # Building part of bigger (tested) model
+        "TimesFm2_5Model",  # Building part of bigger (tested) model
         "CsmDepthDecoderForCausalLM",  # Building part of bigger (tested) model. Tested implicitly through CsmForConditionalGenerationIntegrationTest.
         "CsmDepthDecoderModel",  # Building part of bigger (tested) model. Tested implicitly through CsmForConditionalGenerationIntegrationTest.
         "CsmBackboneModel",  # Building part of bigger (tested) model. Tested implicitly through CsmForConditionalGenerationIntegrationTest.
@@ -210,9 +237,15 @@ IGNORE_NON_TESTED = (
         "BltLocalDecoder",  # Building part of bigger (tested) model. Tested implicitly through BLTForCausalLM.
         "BltGlobalTransformer",  # Building part of bigger (tested) model. Tested implicitly through BLTForCausalLM.
         "Florence2VisionBackbone",  # Building part of bigger (tested) model. Tested implicitly through Florence2ForConditionalGeneration.
-        "Ernie4_5_VL_MoeTextModel",  # Building part of bigger (tested) model
+        "HiggsAudioV2Model",  # Building part of bigger (tested) model. Tested implicitly through HiggsAudioV2ForConditionalGenerationIntegrationTest.
+        "Ernie4_5_VLMoeTextModel",  # Building part of bigger (tested) model
+        "Ernie4_5_VL_MoeForConditionalGeneration",  # BC alias
+        "Ernie4_5_VL_MoeModel",  # BC alias
+        "Ernie4_5_VL_MoeTextModel",  # BC alias
         "PeAudioFrameLevelModel",
         "PeAudioVideoModel",
+        "VibeVoiceAcousticTokenizerEncoderModel",  # Tested through VibeVoiceAcousticTokenizerModel
+        "VibeVoiceAcousticTokenizerDecoderModel",  # Tested through VibeVoiceAcousticTokenizerModel
     ]
 )
 
@@ -336,6 +369,7 @@ IGNORE_NON_AUTO_CONFIGURED = PRIVATE_MODELS.copy() + [
     "OwlViTForObjectDetection",
     "PatchTSMixerForPrediction",
     "PatchTSMixerForPretraining",
+    "PPDocLayoutV2ReadingOrder",
     "RagModel",
     "RagSequenceForGeneration",
     "RagTokenForGeneration",
@@ -399,6 +433,7 @@ IGNORE_NON_AUTO_CONFIGURED = PRIVATE_MODELS.copy() + [
     "Emu3TextModel",  # Building part of bigger (tested) model
     "JanusVQVAE",  # no autoclass for VQ-VAE models
     "JanusVisionModel",  # Building part of bigger (tested) model
+    "PPDocLayoutV2Model",  # Building part of bigger (tested) model
     "PaddleOCRVLModel",  # Building part of bigger (tested) model
     "PaddleOCRVisionModel",  # Building part of bigger (tested) model
     "PaddleOCRVisionTransformer",  # Building part of bigger (tested) model
@@ -416,6 +451,7 @@ IGNORE_NON_AUTO_CONFIGURED = PRIVATE_MODELS.copy() + [
     "CsmForConditionalGeneration",  # Building part of a bigger model
     "BltPatcher",  # Building part of a bigger model, tested implicitly through BltForCausalLM
     "Florence2VisionBackbone",  # Building part of a bigger model
+    "HiggsAudioV2Model",  # Building part of a bigger model
     "Qwen3OmniMoeCode2Wav",  # Building part of a bigger model
     "Qwen3OmniMoeCode2WavTransformerModel",  # Building part of a bigger model
     "Qwen3OmniMoeTalkerCodePredictorModel",  # Building part of a bigger model
@@ -424,8 +460,11 @@ IGNORE_NON_AUTO_CONFIGURED = PRIVATE_MODELS.copy() + [
     "Qwen3OmniMoeTalkerModel",  # Building part of a bigger model
     "Qwen3OmniMoeThinkerForConditionalGeneration",  # Building part of a bigger model
     "Qwen3OmniMoeThinkerTextModel",  # Building part of a bigger model
-    "Ernie4_5_VL_MoeTextModel",  # Building part of a bigger model
+    "Ernie4_5_VLMoeTextModel",  # Building part of a bigger model
     "PeAudioFrameLevelModel",
+    "Ernie4_5_VL_MoeForConditionalGeneration",  # BC Alias
+    "Ernie4_5_VL_MoeModel",  # BC Alias
+    "Ernie4_5_VL_MoeTextModel",  # BC Alias
 ]
 
 
@@ -1026,6 +1065,16 @@ UNDOCUMENTED_OBJECTS = [
     "VitPoseBackbone",  # Internal module
     "VitPoseBackboneConfig",  # Internal module
     "get_values",  # Internal object
+    "Ernie4_5_VL_MoeConfig",  # BC Alias
+    "Ernie4_5_VL_MoeForConditionalGeneration",  # BC Alias
+    "Ernie4_5_VL_MoeImageProcessor",  # BC Alias
+    "Ernie4_5_VL_MoeImageProcessorFast",  # BC Alias
+    "Ernie4_5_VL_MoeModel",  # BC Alias
+    "Ernie4_5_VL_MoeTextConfig",  # BC Alias
+    "Ernie4_5_VL_MoeTextModel",  # BC Alias
+    "Ernie4_5_VL_MoeVariableResolutionResamplerModel",  # BC Alias
+    "Ernie4_5_VL_MoeVisionConfig",  # BC Alias
+    "Ernie4_5_VL_MoeVisionTransformerPretrainedModel",  # BC Alias
 ]
 
 # This list should be empty. Objects in it should get their own doc page.

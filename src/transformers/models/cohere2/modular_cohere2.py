@@ -23,12 +23,11 @@ from ...masking_utils import create_causal_mask, create_sliding_window_causal_ma
 from ...modeling_outputs import BaseModelOutputWithPast
 from ...modeling_rope_utils import (
     RopeParameters,
-    RotaryEmbeddingConfigMixin,
     dynamic_rope_update,
 )
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS
 from ...processing_utils import Unpack
-from ...utils import TransformersKwargs, logging
+from ...utils import TransformersKwargs, auto_docstring, logging
 from ...utils.generic import maybe_autocast
 from ..cohere.modeling_cohere import (
     CohereAttention,
@@ -46,69 +45,11 @@ from ..gemma2.modeling_gemma2 import Gemma2Model
 logger = logging.get_logger(__name__)
 
 
-class Cohere2Config(PreTrainedConfig, RotaryEmbeddingConfigMixin):
+@auto_docstring(checkpoint="CohereForAI/c4ai-command-r-v01")
+class Cohere2Config(PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`CohereModel`]. It is used to instantiate an Cohere
-    model according to the specified arguments, defining the model architecture.
-
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information. Instantiating a configuration
-    with the defaults will yield a similar configuration to that of the [CohereForAI/c4ai-command-r-v01](https://huggingface.co/CohereForAI/c4ai-command-r-v01) model.
-
-
-    Args:
-        vocab_size (`int`, *optional*, defaults to 256000):
-            Vocabulary size of the Cohere model. Defines the number of different tokens that can be represented by the
-            `inputs_ids` passed when calling [`CohereModel`]
-        hidden_size (`int`, *optional*, defaults to 8192):
-            Dimension of the hidden representations.
-        intermediate_size (`int`, *optional*, defaults to 22528):
-            Dimension of the MLP representations.
-        logit_scale (`float`, *optional*, defaults to 0.0625):
-            The scaling factor for the output logits.
-        num_hidden_layers (`int`, *optional*, defaults to 40):
-            Number of hidden layers in the Transformer decoder.
-        num_attention_heads (`int`, *optional*, defaults to 64):
-            Number of attention heads for each attention layer in the Transformer decoder.
-        num_key_value_heads (`int`, *optional*):
-            This is the number of key_value heads that should be used to implement Grouped Query Attention. If
-            `num_key_value_heads=num_attention_heads`, the model will use Multi Head Attention (MHA), if
-            `num_key_value_heads=1` the model will use Multi Query Attention (MQA) otherwise GQA is used. When
-            converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed
-            by meanpooling all the original heads within that group. For more details, check out [this
-            paper](https://huggingface.co/papers/2305.13245). If it is not specified, will default to
-            `num_attention_heads`.
-        hidden_act (`str` or `function`, *optional*, defaults to `"silu"`):
-            The non-linear activation function (function or string) in the decoder.
-        max_position_embeddings (`int`, *optional*, defaults to 8192):
-            The maximum sequence length that this model might ever be used with.
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        layer_norm_eps (`float`, *optional*, defaults to 1e-05):
-            The epsilon used by the layer normalization.
-        use_cache (`bool`, *optional*, defaults to `True`):
-            Whether or not the model should return the last key/values attentions (not used by all models). Only
-            relevant if `config.is_decoder=True`.
-        pad_token_id (`int`, *optional*, defaults to 0):
-            Padding token id.
-        bos_token_id (`int`, *optional*, defaults to 5):
-            Beginning of stream token id.
-        eos_token_id (`int`, *optional*, defaults to 255001):
-            End of stream token id.
-        tie_word_embeddings (`bool`, *optional*, defaults to `True`):
-            Whether to tie weight embeddings
-        rope_parameters (`RopeParameters`, *optional*):
-            Dictionary containing the configuration parameters for the RoPE embeddings. The dictionary should contain
-            a value for `rope_theta` and optionally parameters used for scaling in case you want to use RoPE
-            with longer `max_position_embeddings`.
-        attention_bias (`bool`, defaults to `False`, *optional*, defaults to `False`):
-            Whether to use a bias in the query, key, value and output projection layers during self-attention.
-        attention_dropout (`float`, *optional*, defaults to 0.0):
-            The dropout ratio for the attention probabilities.
-        sliding_window (`int`, *optional*, defaults to 4096):
-            Size of the sliding window attention context.
-        layer_types (`list`, *optional*):
-            Attention pattern for each layer.
+    logit_scale (`float`, *optional*, defaults to 0.0625):
+        The scaling factor for the output logits.
 
     ```python
     >>> from transformers import Cohere2Model, Cohere2Config
@@ -209,10 +150,6 @@ class Cohere2Config(PreTrainedConfig, RotaryEmbeddingConfigMixin):
         layer_type_validation(self.layer_types, self.num_hidden_layers)
 
         self.rope_parameters = rope_parameters
-        self.pad_token_id = pad_token_id
-        self.bos_token_id = bos_token_id
-        self.eos_token_id = eos_token_id
-        self.tie_word_embeddings = tie_word_embeddings
         super().__init__(**kwargs)
 
 
@@ -289,9 +226,9 @@ class Cohere2Attention(CohereAttention):
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
-        attention_interface: Callable = eager_attention_forward
-        if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
+            self.config._attn_implementation, eager_attention_forward
+        )
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -382,7 +319,7 @@ class Cohere2Model(Gemma2Model):
         if not isinstance(causal_mask_mapping := attention_mask, dict):
             mask_kwargs = {
                 "config": self.config,
-                "input_embeds": inputs_embeds,
+                "inputs_embeds": inputs_embeds,
                 "attention_mask": attention_mask,
                 "cache_position": cache_position,
                 "past_key_values": past_key_values,

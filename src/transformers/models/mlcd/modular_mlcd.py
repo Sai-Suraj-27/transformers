@@ -22,7 +22,6 @@ from ...modeling_outputs import BaseModelOutput, BaseModelOutputWithPooling
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, logging
-from ...utils.generic import check_model_inputs
 from ..clip.modeling_clip import (
     CLIPMLP,
     CLIPAttention,
@@ -39,45 +38,11 @@ from ..qwen2_vl.modeling_qwen2_vl import VisionRotaryEmbedding, apply_rotary_pos
 logger = logging.get_logger(__name__)
 
 
+@auto_docstring(checkpoint="DeepGlint-AI/mlcd-vit-bigG-patch14-336")
 class MLCDVisionConfig(PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`MLCDVisionModel`]. It is used to instantiate a MLCD
-    vision encoder according to the specified arguments, defining the model architecture. Instantiating a configuration
-    with the defaults will yield a similar configuration to that of the vision encoder of the MLCD
-    [DeepGlint-AI/mlcd-vit-bigG-patch14-336](https://huggingface.co/DeepGlint-AI/mlcd-vit-bigG-patch14-336) architecture.
-
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information.
-
-    Args:
-        hidden_size (`int`, *optional*, defaults to 1664):
-            Dimensionality of the encoder layers and the pooler layer.
-        intermediate_size (`int`, *optional*, defaults to 8192):
-            Dimensionality of the "intermediate" (i.e., feed-forward) layer in the Transformer encoder.
-        projection_dim (`int`, *optional*, defaults to 1024):
-            Dimensionality of text and vision projection layers.
-        num_hidden_layers (`int`, *optional*, defaults to 48):
-            Number of hidden layers in the Transformer encoder.
-        num_attention_heads (`int`, *optional*, defaults to 16):
-            Number of attention heads for each attention layer in the Transformer encoder.
-        num_channels (`int`, *optional*, defaults to 3):
-            The number of input channels.
-        image_size (`int`, *optional*, defaults to 336):
-            The size (resolution) of each image.
-        patch_size (`int`, *optional*, defaults to 14):
-            The size (resolution) of each patch.
-        hidden_act (`str` or `function`, *optional*, defaults to `"gelu"`):
-            The non-linear activation function (function or string) in the encoder and pooler. If string, `"gelu"`,
-            `"relu"`, `"selu"` and `"gelu_new"` `"quick_gelu"` are supported.
-        layer_norm_eps (`float`, *optional*, defaults to 1e-05):
-            The epsilon used by the layer normalization layers.
-        attention_dropout (`float`, *optional*, defaults to 0.0):
-            The dropout ratio for the attention probabilities.
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        initializer_factor (`float`, *optional*, defaults to 1.0):
-            A factor for initializing all weight matrices (should be kept to 1, used internally for initialization
-            testing).
+    num_key_value_groups (`int`, *optional*, defaults to 1):
+        Number of key-value groups used in Attention.
 
     Example:
 
@@ -224,9 +189,9 @@ class MLCDAttention(CLIPAttention):
         key_states = key_states.permute(0, 2, 1, 3).contiguous()
         value_states = value_states.permute(0, 2, 1, 3).contiguous()
 
-        attention_interface: Callable = eager_attention_forward
-        if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
+            self.config._attn_implementation, eager_attention_forward
+        )
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -396,7 +361,6 @@ class MLCDVisionTransformer(CLIPVisionTransformer):
         self.vision_rotary_embedding = MLCDRotaryEmbedding(config.hidden_size // config.num_attention_heads // 2)
         self.class_pos_emb = nn.Parameter(torch.randn(1, config.hidden_size // config.num_attention_heads // 2))
 
-    @auto_docstring
     def forward(
         self,
         pixel_values: torch.FloatTensor | None = None,
@@ -433,8 +397,6 @@ class MLCDVisionTransformer(CLIPVisionTransformer):
 
 
 class MLCDVisionModel(CLIPVisionModel):
-    @check_model_inputs(tie_last_hidden_states=False)
-    @auto_docstring
     def forward(
         self,
         pixel_values: torch.FloatTensor | None = None,

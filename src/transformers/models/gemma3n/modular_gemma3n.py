@@ -31,7 +31,8 @@ from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS, RopeParameters
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, can_return_tuple, logging, torch_compilable_check
-from ...utils.generic import check_model_inputs
+from ...utils.generic import merge_with_config_defaults
+from ...utils.output_capturing import capture_outputs
 from ..auto import AutoModel
 from ..gemma2.configuration_gemma2 import Gemma2Config
 from ..gemma2.modeling_gemma2 import (
@@ -61,99 +62,34 @@ from ..timm_wrapper.configuration_timm_wrapper import TimmWrapperConfig
 logger = logging.get_logger(__name__)
 
 
+@auto_docstring(checkpoint="google/gemma-3n-E4B")
 class Gemma3nTextConfig(Gemma2Config, PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`Gemma3nTextModel`]. It is used to instantiate an
-    Gemma3nTextModel model according to the specified arguments, defining the model architecture. Instantiating a
-    configuration with the defaults will yield a similar configuration to that of the Gemma 3n E4B, e.g.
-    [google/gemma-3n-E4B](https://huggingface.co/google/gemma-3n-E4B).
-
-    Configuration objects that inherit from [`Gemma3nTextConfig`] and can be used to control the model outputs. Read
-    the documentation from [`Gemma3nTextConfig`] for more information.
-
-    Args:
-        vocab_size (`int`, *optional*, defaults to 262400):
-            Vocabulary size of the Gemma3nText model. Defines the number of different tokens that can be represented by
-            the `inputs_ids` passed when calling [`Gemma3nTextModel`]
-        vocab_size_per_layer_input (`int`, *optional*, defaults to 262144):
-            Vocabulary size of the per-layer text embeddings that augment the standard embeddings.
-        hidden_size (`int`, *optional*, defaults to 2048):
-            Dimension of the hidden representations.
-        hidden_size_per_layer_input (`int`, *optional*, defaults to 256):
-            Dimension of the hidden representations for per-layer emebeddings.
-        intermediate_size (`int` or `Sequence[int]`, *optional*, defaults to 16384):
-            Dimension of the MLP representations. MatFormer configurations may wish to provide a sequence of integers
-            to account for variable intermediate_size values across layers. In such cases,
-            `len(intermediate_size) == num_hidden_layers`.
-        num_hidden_layers (`int`, *optional*, defaults to 35):
-            Number of hidden layers in the Transformer decoder.
-        num_attention_heads (`int`, *optional*, defaults to 8):
-            Number of attention heads for each attention layer in the Transformer decoder.
-        num_key_value_heads (`int`, *optional*, defaults to 2):
-            This is the number of key_value heads that should be used to implement Grouped Query Attention. If
-            `num_key_value_heads=num_attention_heads`, the model will use Multi Head Attention (MHA), if
-            `num_key_value_heads=1` the model will use Multi Query Attention (MQA) otherwise GQA is used. When
-            converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed
-            by meanpooling all the original heads within that group. For more details checkout this
-            [paper](https://huggingface.co/papers/2305.13245). If not specified, will default to `num_attention_heads`.
-        head_dim (`int`, *optional*, defaults to 256):
-            The attention head dimension.
-        hidden_activation (`str` or `function`, *optional*, defaults to `"gelu_pytorch_tanh"`):
-            The non-linear activation function (function or string) in the decoder. Will default to
-            `"gelu_pytorch_tanh"` if not specified. `"gelu_pytorch_tanh"` uses an approximation of the `"gelu"`
-            activation function.
-        max_position_embeddings (`int`, *optional*, defaults to 32768):
-            The maximum sequence length that this model might ever be used with.
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        rms_norm_eps (`float`, *optional*, defaults to 1e-06):
-            The epsilon used by the rms normalization layers.
-        use_cache (`bool`, *optional*, defaults to `True`):
-            Whether or not the model should return the last key/values attentions (not used by all models). Only
-            relevant if `config.is_decoder=True`.
-        pad_token_id (`int`, *optional*, defaults to 0):
-            Padding token id.
-        eos_token_id (`int`, *optional*, defaults to 1):
-            End of stream token id.
-        bos_token_id (`int`, *optional*, defaults to 2):
-            Beginning of stream token id.
-        rope_parameters (`dict`, *optional*):
-            Dictionary mapping attention patterns (`"full_attention"`, `"sliding_attention"`) to `RopeParameters`.
-            Each value should be a dictionary containing `rope_type` and optional scaling parameters.
-        attention_bias (`bool`, defaults to `False`, *optional*, defaults to `False`):
-            Whether to use a bias in the query, key, value and output projection layers during self-attention.
-        attention_dropout (`float`, *optional*, defaults to 0.0):
-            The dropout ratio for the attention probabilities.
-        sliding_window (`int`, *optional*, defaults to 512):
-            This is the size of the sliding window used by local attention layers.
-        layer_types (`Optional`, *optional*):
-            A sequence of strings defining the attention type for that layer as either "sliding_attention" or
-            "full_attention". If not provided, `layer_types` will de inferred from `num_hidden_layers` using a pattern
-            of four "sliding_attention" layers followed one "full_attention". The last layer in the model should always
-            be a "full_attention" layer.
-        final_logit_softcapping (`float`, *optional*, defaults to 30.0):
-            Scaling factor when applying tanh softcapping on the logits.
-        altup_active_idx (`int`, *optional*, defaults to 0):
-            The index of the prediction from which AltUp will compute additional predictions or correct
-        altup_coef_clip (`float`, *optional*, defaults to 120.0):
-            The maximum amplitude of an AltUp prediction or correction coefficient weight.
-        altup_correct_scale (`bool`, *optional*, defaults to `True`):
-            If True, apply the `AltUp.correct_output_scale` to the corrected prediction at `altup_active_idx`.
-        altup_num_inputs (`int`, *optional*, defaults to 4):
-            The number of predictions that AltUp should be make given the input sequence.
-        num_kv_shared_layers (`int`, *optional*, defaults to 15):
-            The number of layer that share KV cache values. During the forward pass, the last `num_kv_shared_layers`
-            layers in the model "share" the KV values in that each local and global layer in this range uses the KV
-            cache values computed for the last local or global layer, respectively, before entering this range. The
-            value should be a multiple of the attention pattern size (see `layer_types` parameter).
-        laurel_rank (int, *optional*, defaults to 64):
-            The intermediate size for the linear projections in the Learned Augmented Residual Layer.
-        activation_sparsity_pattern (Sequence[float], *optional*):
-            The sparsity factor used to extract the top-k activations for a given layer. The provided Sequence must
-            explicitly provide a sparsity value for each layer in the model. By default, the first 10 layers are
-            sparse with a sparsity factor of 0.95 and the rest are dense.
-        tie_word_embeddings (`bool`, *optional*, defaults to `True`):
-            Whether to tie weight embeddings
+    query_pre_attn_scalar (`float`, *optional*, defaults to 256):
+        scaling factor used on the attention scores
+    vocab_size_per_layer_input (`int`, *optional*, defaults to 262144):
+        Vocabulary size of the per-layer text embeddings that augment the standard embeddings.
+    hidden_size_per_layer_input (`int`, *optional*, defaults to 256):
+        Dimension of the hidden representations for per-layer emebeddings.
+    altup_active_idx (`int`, *optional*, defaults to 0):
+        The index of the prediction from which AltUp will compute additional predictions or correct
+    altup_coef_clip (`float`, *optional*, defaults to 120.0):
+        The maximum amplitude of an AltUp prediction or correction coefficient weight.
+    altup_correct_scale (`bool`, *optional*, defaults to `True`):
+        If True, apply the `AltUp.correct_output_scale` to the corrected prediction at `altup_active_idx`.
+    altup_num_inputs (`int`, *optional*, defaults to 4):
+        The number of predictions that AltUp should be make given the input sequence.
+    num_kv_shared_layers (`int`, *optional*, defaults to 15):
+        The number of layer that share KV cache values. During the forward pass, the last `num_kv_shared_layers`
+        layers in the model "share" the KV values in that each local and global layer in this range uses the KV
+        cache values computed for the last local or global layer, respectively, before entering this range. The
+        value should be a multiple of the attention pattern size (see `layer_types` parameter).
+    laurel_rank (int, *optional*, defaults to 64):
+        The intermediate size for the linear projections in the Learned Augmented Residual Layer.
+    activation_sparsity_pattern (Sequence[float], *optional*):
+        The sparsity factor used to extract the top-k activations for a given layer. The provided Sequence must
+        explicitly provide a sparsity value for each layer in the model. By default, the first 10 layers are
+        sparse with a sparsity factor of 0.95 and the rest are dense.
 
     ```python
     >>> from transformers import Gemma3nTextModel, Gemma3nTextConfig
@@ -170,6 +106,18 @@ class Gemma3nTextConfig(Gemma2Config, PreTrainedConfig):
     """
 
     model_type = "gemma3n_text"
+    base_model_tp_plan = {
+        "layers.*.self_attn.q_proj": "colwise",
+        "layers.*.self_attn.k_proj": "colwise",
+        "layers.*.self_attn.v_proj": "colwise",
+        "layers.*.self_attn.q_norm": "replicated_with_grad_allreduce",
+        "layers.*.self_attn.k_norm": "replicated_with_grad_allreduce",
+        "layers.*.self_attn.v_norm": "replicated_with_grad_allreduce",
+        "layers.*.self_attn.o_proj": "rowwise",
+        "layers.*.mlp.gate_proj": "colwise",
+        "layers.*.mlp.up_proj": "colwise",
+        "layers.*.mlp.down_proj": "rowwise",
+    }
     default_theta = {"global": 1_000_000.0, "local": 10_000.0}
 
     def __init__(
@@ -304,75 +252,59 @@ class Gemma3nTextConfig(Gemma2Config, PreTrainedConfig):
         return kwargs
 
 
+@auto_docstring(checkpoint="google/gemma-3n-E4B")
 class Gemma3nAudioConfig(PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`Gemma3nAudioEncoder`]. It is used to instantiate
-    an `Gemma3nAudioEncoder` model according to the specified arguments, defining the model architecture. Instantiating
-    a configuration with the defaults will yield a similar configuration to that of the Gemma 3n E4B, e.g.,
-    [google/gemma-3n-E4B](https://huggingface.co/google/gemma-3n-E4B).
-
-    Configuration objects that inherit from [`Gemma3nAudioConfig`] and can be used to control the model outputs. Read
-    the documentation from [`Gemma3nAudioConfig`] for more information.
-
-    Args:
-        vocab_size (`int`, *optional*, defaults to 128):
-            Vocabulary size of the additional hard-token embeddings for audio model. These augment the embeddings
-            included in the `Gemma3nTextModel` to provide, e.g., the end of audio and audio soft token placeholder
-            tokens when converting `input_ids` to embeddings in the `Gemma3nForConditionalGeneration` model.
-        vocab_offset (`int`, *optional*, defaults to 262272):
-            Offset between the tokenizer vocab index for the token ids embedded by `Gemma3nMultimodalEmbedder` and the
-            0-indexed `Gemma3nMultimodalEmbedder.embedding` table.
-        input_feat_size (`int`, *optional*, defaults to 128):
-            The number of channels in each mel-spectrogram frame.
-        hidden_size (`int`, *optional*, defaults to 1536):
-            Dimension of the hidden representations.
-        rms_norm_eps (`float`, *optional*, defaults to 1e-06):
-            The epsilon used by the rms normalization layers.
-        gradient_clipping (`float`, *optional*, defaults to 10000000000.0):
-            Clipping value used to stabilize extremely large gradient values.
-        conf_attention_chunk_size (`int`, *optional*, defaults to 12):
-            The sub-sequence size for local attention processing inside the Conformer ("conf") section of the
-            Universal Speech Model.
-        conf_attention_context_left (`int`, *optional*, defaults to 13):
-            The left context size of the local attention inside the Conformer ("conf") section of the
-            Universal Speech Model.
-        conf_attention_context_right (`int`, *optional*, defaults to 0):
-            The right context size of the local attention inside the Conformer ("conf") section of the
-            Universal Speech Model.
-        conf_attention_logit_cap (`float`, *optional*, defaults to 50.0):
-            Logit cap applied during local attention inside the Conformer ("conf") section of the
-            Universal Speech Model.
-        conf_num_attention_heads (`int`, *optional*, defaults to 8):
-            The number of attention heads in local attention inside the Conformer ("conf") section of the
-            Universal Speech Model.
-        conf_num_hidden_layers (`int`, *optional*, defaults to 12):
-            The number of layers that use local attention inside the Conformer ("conf") section of the
-            Universal Speech Model.
-        conf_conv_kernel_size (`int`, *optional*, defaults to 5):
-            Convolution kernel size for the conformer block inside the Conformer ("conf") section of the
-            Universal Speech Model.
-        conf_reduction_factor (`int`, *optional*, defaults to 4):
-            Reduction factor used in the conformer block inside the Conformer ("conf") section of the
-            Universal Speech Model.
-        conf_residual_weight (`float`, *optional*, defaults to 0.5):
-            Residual connection weight inside the Conformer ("conf") section of the
-            Universal Speech Model.
-        sscp_conv_channel_size (`tuple(int, int)`, *optional*, defaults to `(128, 32)`):
-            The channel sizes for the first and second convolutional layers in the Sub-sample Convolution Projection
-            ("sscp") section of the Universal Speech Model.
-        sscp_conv_group_norm_eps (`float`, *optional*, defaults to 0.001):
-            Epsilon used in group normalization in the subsample convolution projection in the Sub-sample Convolution
-            Projection ("sscp") section of the Universal Speech Model.
-        sscp_conv_kernel_size (`tuple(tuple(int, int), tuple(int, int))`, *optional*, defaults to `((3, 3), (3, 3))`):
-            Kernel sizes of the two convolutional layers in the subsample convolution projection  in the Sub-sample
-            Convolution Projection ("sscp") section of the Universal Speech Model. The kernel sizes are specified as a
-            tuple of height and width for each layer, where the height corresponds to the time dimension and the width
-            corresponds to the frequency dimension.
-        sscp_conv_stride_size (`tuple(tuple(int, int), tuple(int, int))`, *optional*, defaults to `((2, 2), (2, 2))`):
-            Stride sizes of the two convolutional layers in the subsample convolution projection in the Sub-sample
-            Convolution Projection ("sscp") section of the Universal Speech Model. The stride sizes are specified as a
-            tuple of height and width for each layer, where the height corresponds to the time dimension and the width
-            corresponds to the frequency dimension.
+    vocab_offset (`int`, *optional*, defaults to 262272):
+        Offset between the tokenizer vocab index for the token ids embedded by `Gemma3nMultimodalEmbedder` and the
+        0-indexed `Gemma3nMultimodalEmbedder.embedding` table.
+    input_feat_size (`int`, *optional*, defaults to 128):
+        The number of channels in each mel-spectrogram frame.
+    gradient_clipping (`float`, *optional*, defaults to 10000000000.0):
+        Clipping value used to stabilize extremely large gradient values.
+    conf_attention_chunk_size (`int`, *optional*, defaults to 12):
+        The sub-sequence size for local attention processing inside the Conformer ("conf") section of the
+        Universal Speech Model.
+    conf_attention_context_left (`int`, *optional*, defaults to 13):
+        The left context size of the local attention inside the Conformer ("conf") section of the
+        Universal Speech Model.
+    conf_attention_context_right (`int`, *optional*, defaults to 0):
+        The right context size of the local attention inside the Conformer ("conf") section of the
+        Universal Speech Model.
+    conf_attention_logit_cap (`float`, *optional*, defaults to 50.0):
+        Logit cap applied during local attention inside the Conformer ("conf") section of the
+        Universal Speech Model.
+    conf_num_attention_heads (`int`, *optional*, defaults to 8):
+        The number of attention heads in local attention inside the Conformer ("conf") section of the
+        Universal Speech Model.
+    conf_num_hidden_layers (`int`, *optional*, defaults to 12):
+        The number of layers that use local attention inside the Conformer ("conf") section of the
+        Universal Speech Model.
+    conf_conv_kernel_size (`int`, *optional*, defaults to 5):
+        Convolution kernel size for the conformer block inside the Conformer ("conf") section of the
+        Universal Speech Model.
+    conf_reduction_factor (`int`, *optional*, defaults to 4):
+        Reduction factor used in the conformer block inside the Conformer ("conf") section of the
+        Universal Speech Model.
+    conf_residual_weight (`float`, *optional*, defaults to 0.5):
+        Residual connection weight inside the Conformer ("conf") section of the
+        Universal Speech Model.
+    sscp_conv_channel_size (`tuple(int, int)`, *optional*, defaults to `(128, 32)`):
+        The channel sizes for the first and second convolutional layers in the Sub-sample Convolution Projection
+        ("sscp") section of the Universal Speech Model.
+    sscp_conv_group_norm_eps (`float`, *optional*, defaults to 0.001):
+        Epsilon used in group normalization in the subsample convolution projection in the Sub-sample Convolution
+        Projection ("sscp") section of the Universal Speech Model.
+    sscp_conv_kernel_size (`tuple(tuple(int, int), tuple(int, int))`, *optional*, defaults to `((3, 3), (3, 3))`):
+        Kernel sizes of the two convolutional layers in the subsample convolution projection  in the Sub-sample
+        Convolution Projection ("sscp") section of the Universal Speech Model. The kernel sizes are specified as a
+        tuple of height and width for each layer, where the height corresponds to the time dimension and the width
+        corresponds to the frequency dimension.
+    sscp_conv_stride_size (`tuple(tuple(int, int), tuple(int, int))`, *optional*, defaults to `((2, 2), (2, 2))`):
+        Stride sizes of the two convolutional layers in the subsample convolution projection in the Sub-sample
+        Convolution Projection ("sscp") section of the Universal Speech Model. The stride sizes are specified as a
+        tuple of height and width for each layer, where the height corresponds to the time dimension and the width
+        corresponds to the frequency dimension.
 
     Example:
 
@@ -443,35 +375,19 @@ class Gemma3nAudioConfig(PreTrainedConfig):
         self.sscp_conv_stride_size = sscp_conv_stride_size
 
 
+@auto_docstring(checkpoint="google/gemma-3n-E4B")
 class Gemma3nVisionConfig(TimmWrapperConfig):
     r"""
-    This is the configuration class to store the configuration for a timm backbone [`TimmWrapper`]. It is used to
-    instantiate an timm model model according to the specified arguments, defining the model architecture.
-    Instantiating a configuration with the defaults will yield a similar configuration to that of the Gemma 3n E4B
-    vision tower, e.g. [google/gemma-3n-E4B](https://huggingface.co/google/gemma-3n-E4B).
-
-    Configuration objects inherit from [`Gemma3nVisionConfig`] and can be used to control the model outputs. Read the
-    documentation from [`Gemma3nVisionConfig`] for more information.
-
-    Config loads imagenet label descriptions and stores them in `id2label` attribute, `label2id` attribute for default
-    imagenet models is set to `None` due to occlusions in the label descriptions.
-
-    Args:
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        do_pooling (`bool`, *optional*, defaults to `False`):
-            Whether to do pooling for the last_hidden_state in `TimmWrapper` or not.
-        architecture (`str`, *optional*, defaults to `"mobilenetv5_300m_enc"`):
-            Determines vision architecture for TimmWrapper.
-        hidden_size (`int`, *optional*, defaults to 2048):
-            Dimension of the hidden representations.
-        vocab_size (`int`, *optional*, defaults to 128):
-            Vocabulary size of the additional hard-token embeddings for vision model.
-        vocab_offset (`int`, *optional*, defaults to 262144):
-            Offset between the tokenizer vocab index for the token ids embedded by `Gemma3nMultimodalEmbedder` and the
-            0-indexed `Gemma3nMultimodalEmbedder.embedding` table.
-        rms_norm_eps (`float`, *optional*, defaults to 1e-06):
-            The epsilon used by the rms normalization layers.
+    architecture (`str`, *optional*, defaults to `"resnet50"`):
+        The timm architecture to load.
+    do_pooling (`bool`, *optional*, defaults to `True`):
+        Whether to do pooling for the last_hidden_state in `TimmWrapperModel` or not.
+    model_args (`dict[str, Any]`, *optional*):
+        Additional keyword arguments to pass to the `timm.create_model` function. e.g. `model_args={"depth": 3}`
+        for `timm/vit_base_patch32_clip_448.laion2b_ft_in12k_in1k` to create a model with 3 blocks. Defaults to `None`.
+    vocab_offset (`int`, *optional*, defaults to 262144):
+        Offset between the tokenizer vocab index for the token ids embedded by `Gemma3nMultimodalEmbedder` and the
+        0-indexed `Gemma3nMultimodalEmbedder.embedding` table.
 
     Example:
     ```python
@@ -512,45 +428,21 @@ class Gemma3nVisionConfig(TimmWrapperConfig):
         super().__init__(**kwargs)
 
 
+@auto_docstring(checkpoint="google/gemma-3n-E4B")
 class Gemma3nConfig(PreTrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`Gemma3nForConditionalGeneration`]. It is used to
-    instantiate a Gemma3nForConditionalGeneration according to the specified arguments, defining the model
-    architecture. Instantiating a configuration with the defaults will yield a similar configuration to that of
-    Gemma3n-E4B.
-
-    e.g. [google/gemma-3n-E4B](https://huggingface.co/google/gemma-3n-E4B)
-
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information.
-
-    Args:
-        text_config (`Union[Gemma3nTextConfig, dict]`, *optional*):
-            The config object of the text backbone.
-        vision_config (`Union[AutoConfig, dict]`,  *optional*):
-            Custom vision config or dict.
-        audio_config (`Union[AutoConfig, dict]`,  *optional*):
-            Custom audio config or dict.
-        audio_soft_tokens_per_image (`int`, *optional*, defaults to 188):
-            The number of soft tokens per audio clip.
-        vision_soft_tokens_per_image (`int`, *optional*, defaults to 256):
-            The number of soft tokens per image.
-        boi_token_id (`int`, *optional*, defaults to 255999):
-            The begin-of-image token index to wrap the image prompt.
-        eoi_token_id (`int`, *optional*, defaults to 262144):
-            The end-of-image token index to wrap the image prompt.
-        image_token_id (`int`, *optional*, defaults to 262145):
-            The image token index to encode the image prompt.
-        boa_token_id (`int`, *optional*, defaults to 256000):
-            The begin-of-audio token index to wrap the audio prompt.
-        eoa_token_id (`int`, *optional*, defaults to 262272):
-            The end-of-audio token index to wrap the audio prompt.
-        audio_token_id (`int`, *optional*, defaults to 262273):
-            The audio token index to encode the audio prompt.
-        initializer_range (`float`, *optional*, defaults to 0.02):
-            The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        tie_word_embeddings (`bool`, *optional*, defaults to `True`):
-            Whether to tie weight embeddings
+    audio_soft_tokens_per_image (`int`, *optional*, defaults to 188):
+        The number of soft tokens per audio clip.
+    vision_soft_tokens_per_image (`int`, *optional*, defaults to 256):
+        The number of soft tokens per image.
+    boi_token_id (`int`, *optional*, defaults to 255999):
+        The begin-of-image token index to wrap the image prompt.
+    eoi_token_id (`int`, *optional*, defaults to 262144):
+        The end-of-image token index to wrap the image prompt.
+    boa_token_id (`int`, *optional*, defaults to 256000):
+        The begin-of-audio token index to wrap the audio prompt.
+    eoa_token_id (`int`, *optional*, defaults to 262272):
+        The end-of-audio token index to wrap the audio prompt.
 
     Example:
 
@@ -600,8 +492,6 @@ class Gemma3nConfig(PreTrainedConfig):
         tie_word_embeddings: bool | None = True,
         **kwargs,
     ):
-        super().__init__(**kwargs)
-
         if isinstance(text_config, dict):
             text_config = Gemma3nTextConfig(**text_config)
         elif text_config is None:
@@ -634,13 +524,14 @@ class Gemma3nConfig(PreTrainedConfig):
         self.audio_token_id = audio_token_id
         self.initializer_range = initializer_range
         self.tie_word_embeddings = tie_word_embeddings
+        super().__init__(**kwargs)
 
 
 @dataclass
 @auto_docstring
 class Gemma3nAudioEncoderModelOutput(BaseModelOutputWithPooling):
     r"""
-    audio_mel_mask (`torch.FloatTensor`, *optional*):
+    audio_mel_mask (`torch.BoolTensor`, *optional*):
         A torch.BoolTensor of shape `(batch_size, num_frames)`
     """
 
@@ -1399,7 +1290,7 @@ class Gemma3nAudioConformerFeedForward(nn.Module):
         self.ffw_layer_1 = nn.Linear(self.config.hidden_size, self.config.hidden_size * 4, bias=False)
         self.ffw_layer_2 = nn.Linear(self.config.hidden_size * 4, self.config.hidden_size, bias=False)
         self.post_layer_norm = Gemma3nRMSNorm(self.config.hidden_size)
-        self.post_layer_scale = torch.tensor(self.config.conf_residual_weight)
+        self.post_layer_scale = self.config.conf_residual_weight
 
     def forward(self, audio_encodings: torch.Tensor) -> torch.Tensor:
         residual = audio_encodings
@@ -1481,86 +1372,6 @@ class Gemma3nAudioConformerBlock(nn.Module):
         audio_encodings = torch.clamp(audio_encodings, -self.gradient_clipping, self.gradient_clipping)
         output = self.norm(audio_encodings)
         return output
-
-
-class Gemma3nAudioEncoder(PreTrainedModel):
-    """
-    An audio encoder based on the [Universal Speech Model](https://huggingface.co/papers/2303.01037) architecture.
-    """
-
-    config: Gemma3nAudioConfig
-
-    main_input_name = "audio_mel"
-    input_modalities = "audio"
-
-    def __init__(self, config: Gemma3nAudioConfig):
-        super().__init__(config)
-        self.config = config
-
-        self.subsample_conv_projection = Gemma3nAudioSubSampleConvProjection(config)
-        self.conformer = nn.ModuleList(
-            [Gemma3nAudioConformerBlock(config) for _ in range(config.conf_num_hidden_layers)]
-        )
-        self.post_init()
-
-    @check_model_inputs
-    def forward(
-        self, audio_mel: torch.Tensor, audio_mel_mask: torch.BoolTensor, **kwargs: Unpack[TransformersKwargs]
-    ) -> tuple | Gemma3nAudioEncoderModelOutput:
-        """Encodes a batch of MELs.
-
-        Args:
-            audio_mel: a torch.Tensor of shape [batch, num_frames, num_channels,
-              mel_bins].
-
-        Returns:
-            audio_encodings: a torch.Tensor of shape
-                `[batch_size, self.config.audio_soft_tokens_per_image,
-                self.config.audio_config.hidden_size]`
-            audio_mel_mask: a torch.BoolTensor of shape [batch, num_frames].
-        """
-        audio_encodings = self.subsample_conv_projection(audio_mel)  # audio_encodings: [B, T_sub, D]
-
-        # Subsample the input audio_mel_mask to match the time dimension of audio_encodings (T_sub)
-        t_sub = audio_encodings.shape[1]
-
-        time_stride_product = 1
-        for stride_pair_idx in range(len(self.config.sscp_conv_stride_size)):
-            time_stride_product *= self.config.sscp_conv_stride_size[stride_pair_idx][0]
-
-        # Create indices for gathering from the original mask.
-        # These indices map to original time steps corresponding to the start of each
-        # receptive field in the subsampled output.
-        indices = torch.arange(t_sub, device=audio_mel_mask.device) * time_stride_product
-        indices = torch.clamp(indices, max=audio_mel_mask.shape[1] - 1)  # Ensure indices are valid
-
-        # Expand indices for batch compatibility if B > 1 and indices is 1D.
-        if audio_mel_mask.ndim > 1 and indices.ndim == 1:
-            indices = indices.unsqueeze(0).expand(audio_mel_mask.shape[0], -1)  # [B, T_sub]
-        elif (
-            audio_mel_mask.ndim == indices.ndim
-            and audio_mel_mask.shape[0] == 1
-            and indices.shape[0] != 1
-            and t_sub == indices.shape[0]
-        ):
-            # Handle case where B=1 but indices became [T_sub] instead of [1, T_sub]
-            indices = indices.unsqueeze(0)
-
-        current_mask = torch.gather(audio_mel_mask, 1, indices)  # [B, T_sub]
-
-        for block in self.conformer:
-            audio_encodings = block(audio_encodings, current_mask)  # Pass the processed mask
-
-        if self.config.conf_reduction_factor > 1:
-            audio_encodings = audio_encodings[:, :: self.config.conf_reduction_factor]
-            # Reduce the mask as well
-            current_mask = current_mask[:, :: self.config.conf_reduction_factor]
-
-        audio_encodings = audio_encodings.masked_fill(current_mask.unsqueeze(-1), 0.0)
-        return Gemma3nAudioEncoderModelOutput(
-            last_hidden_state=audio_encodings,
-            audio_mel_mask=current_mask,
-        )
 
 
 # ==== Language Model ====
@@ -1692,12 +1503,14 @@ class Gemma3nTextAltUp(nn.Module):
         innovation = innovation.repeat(self.config.altup_num_inputs, 1, 1, 1)  # Repeat on dim0 to match predictions
 
         if self.training and self.config.altup_coef_clip is not None:
-            self.correction_coefs.weight.data.clamp_(-self.config.altup_coef_clip, self.config.altup_coef_clip)
+            weight = self.correction_coefs.weight.clamp(-self.config.altup_coef_clip, self.config.altup_coef_clip)
+            all_coefs = torch.nn.functional.linear(modalities, weight, bias=None) + 1.0
+        else:
+            all_coefs = self.correction_coefs(modalities) + 1.0
 
         # all_coefs adapted from jax.numpy.einsum("...p,pi->...i", ...)
         # Permute to (altup_num_inputs, batch_size, num_tokens) as the last dim is a scalar applied to each altup input
         # and expand on dim1 for broadcastability
-        all_coefs: torch.Tensor = self.correction_coefs(modalities) + 1.0
         all_coefs = all_coefs.permute(2, 0, 1).unsqueeze(-1)
 
         corrected = torch.mul(innovation, all_coefs)
@@ -1812,9 +1625,9 @@ class Gemma3nTextAttention(Gemma3Attention):
                     past_key_values.shared_layers = {}
                 past_key_values.shared_layers[self.layer_idx] = key_states, value_states
 
-        attention_interface: Callable = eager_attention_forward
-        if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
+            self.config._attn_implementation, eager_attention_forward
+        )
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -1952,6 +1765,87 @@ class Gemma3nPreTrainedModel(Gemma2PreTrainedModel):
             init.constant_(module.gradient_clipping, self.config.gradient_clipping)
 
 
+class Gemma3nAudioEncoder(Gemma3nPreTrainedModel):
+    """
+    An audio encoder based on the [Universal Speech Model](https://huggingface.co/papers/2303.01037) architecture.
+    """
+
+    config: Gemma3nAudioConfig
+
+    main_input_name = "audio_mel"
+    input_modalities = "audio"
+
+    def __init__(self, config: Gemma3nAudioConfig):
+        super().__init__(config)
+        self.config = config
+
+        self.subsample_conv_projection = Gemma3nAudioSubSampleConvProjection(config)
+        self.conformer = nn.ModuleList(
+            [Gemma3nAudioConformerBlock(config) for _ in range(config.conf_num_hidden_layers)]
+        )
+        self.post_init()
+
+    @merge_with_config_defaults
+    @capture_outputs
+    def forward(
+        self, audio_mel: torch.Tensor, audio_mel_mask: torch.BoolTensor, **kwargs: Unpack[TransformersKwargs]
+    ) -> tuple | Gemma3nAudioEncoderModelOutput:
+        """Encodes a batch of MELs.
+
+        Args:
+            audio_mel: a torch.Tensor of shape [batch, num_frames, num_channels,
+              mel_bins].
+
+        Returns:
+            audio_encodings: a torch.Tensor of shape
+                `[batch_size, self.config.audio_soft_tokens_per_image,
+                self.config.audio_config.hidden_size]`
+            audio_mel_mask: a torch.BoolTensor of shape [batch, num_frames].
+        """
+        audio_encodings = self.subsample_conv_projection(audio_mel)  # audio_encodings: [B, T_sub, D]
+
+        # Subsample the input audio_mel_mask to match the time dimension of audio_encodings (T_sub)
+        t_sub = audio_encodings.shape[1]
+
+        time_stride_product = 1
+        for stride_pair_idx in range(len(self.config.sscp_conv_stride_size)):
+            time_stride_product *= self.config.sscp_conv_stride_size[stride_pair_idx][0]
+
+        # Create indices for gathering from the original mask.
+        # These indices map to original time steps corresponding to the start of each
+        # receptive field in the subsampled output.
+        indices = torch.arange(t_sub, device=audio_mel_mask.device) * time_stride_product
+        indices = torch.clamp(indices, max=audio_mel_mask.shape[1] - 1)  # Ensure indices are valid
+
+        # Expand indices for batch compatibility if B > 1 and indices is 1D.
+        if audio_mel_mask.ndim > 1 and indices.ndim == 1:
+            indices = indices.unsqueeze(0).expand(audio_mel_mask.shape[0], -1)  # [B, T_sub]
+        elif (
+            audio_mel_mask.ndim == indices.ndim
+            and audio_mel_mask.shape[0] == 1
+            and indices.shape[0] != 1
+            and t_sub == indices.shape[0]
+        ):
+            # Handle case where B=1 but indices became [T_sub] instead of [1, T_sub]
+            indices = indices.unsqueeze(0)
+
+        current_mask = torch.gather(audio_mel_mask, 1, indices)  # [B, T_sub]
+
+        for block in self.conformer:
+            audio_encodings = block(audio_encodings, current_mask)  # Pass the processed mask
+
+        if self.config.conf_reduction_factor > 1:
+            audio_encodings = audio_encodings[:, :: self.config.conf_reduction_factor]
+            # Reduce the mask as well
+            current_mask = current_mask[:, :: self.config.conf_reduction_factor]
+
+        audio_encodings = audio_encodings.masked_fill(current_mask.unsqueeze(-1), 0.0)
+        return Gemma3nAudioEncoderModelOutput(
+            last_hidden_state=audio_encodings,
+            audio_mel_mask=current_mask,
+        )
+
+
 class Gemma3nRotaryEmbedding(Gemma3RotaryEmbedding):
     pass
 
@@ -2032,7 +1926,8 @@ class Gemma3nTextModel(Gemma3TextModel):
         )
 
     # Last hidden states should be before reprojecting, to stay consistent with the other layer outputs
-    @check_model_inputs(tie_last_hidden_states=False)
+    @merge_with_config_defaults
+    @capture_outputs(tie_last_hidden_states=False)
     @auto_docstring
     def forward(
         self,
@@ -2074,7 +1969,7 @@ class Gemma3nTextModel(Gemma3TextModel):
             # Prepare mask arguments
             mask_kwargs = {
                 "config": self.config,
-                "input_embeds": inputs_embeds,
+                "inputs_embeds": inputs_embeds,
                 "attention_mask": attention_mask,
                 "cache_position": cache_position,
                 "past_key_values": past_key_values,
@@ -2302,7 +2197,7 @@ class Gemma3nModel(PaliGemmaModel):
         output_attentions: bool | None = None,
         output_hidden_states: bool | None = None,
         **lm_kwargs: Unpack[TransformersKwargs],
-    ) -> Gemma3nCausalLMOutputWithPast:
+    ) -> Gemma3nModelOutputWithPast:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
@@ -2382,9 +2277,9 @@ class Gemma3nModel(PaliGemmaModel):
 
         # Merge text and audio
         if input_features is not None and input_features_mask is not None:
-            audio_features = self.get_audio_features(input_features, ~input_features_mask, return_dict=True)
-            audio_features = audio_features.pooler_output
-            audio_mask = audio_features.audio_mel_mask
+            audio_outputs = self.get_audio_features(input_features, ~input_features_mask, return_dict=True)
+            audio_features = audio_outputs.pooler_output
+            audio_mask = audio_outputs.audio_mel_mask
 
             # The Gemma3nProcessor expects all audio will be 30s in length and inserts 188 audio soft tokens into the
             # text to account for this. However, the audio preprocessing and encoder do not gurarantee they will

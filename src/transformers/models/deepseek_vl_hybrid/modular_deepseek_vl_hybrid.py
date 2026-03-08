@@ -82,25 +82,11 @@ DEEPSEEK_VL_COMMON_CUSTOM_ARGS = r"""
 """
 
 
+@auto_docstring(checkpoint="deepseek-community/deepseek-vl-7b-chat")
 class DeepseekVLHybridConfig(DeepseekVLConfig):
     r"""
-    This is the configuration class to store the configuration of a [`DeepseekVLHybridModel`]. It is used to instantiate a
-    DeepseekVLHybrid model according to the specified arguments, defining the model architecture. Instantiating a configuration
-    with the defaults will yield a similar configuration to that of the DeepseekVLHybrid
-    [deepseek-community/deepseek-vl-7b-chat](https://huggingface.co/deepseek-community/deepseek-vl-7b-chat) architecture.
-
-    Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
-    documentation from [`PreTrainedConfig`] for more information.
-
-    Args:
-        text_config (`Union[AutoConfig, dict]`, *optional*, defaults to `LlamaConfig`):
-            The config object or dictionary of the text backbone.
-        vision_config (`Union[AutoConfig, dict]`,  *optional*, defaults to `SiglipVisionConfig`):
-            The config object or dictionary of the vision backbone.
-        high_res_vision_config (`Union[AutoConfig, dict]`,  *optional*, defaults to `SamVisionConfig`):
-            The config object or dictionary of the high resolution vision backbone.
-        image_token_id (`int`, *optional*, defaults to 100015):
-            The index representing image tokens in the model's token vocabulary.
+    high_res_vision_config (`Union[AutoConfig, dict]`,  *optional*, defaults to `SamVisionConfig`):
+        The config object or dictionary of the high resolution vision backbone.
 
     Example:
 
@@ -126,6 +112,7 @@ class DeepseekVLHybridConfig(DeepseekVLConfig):
         vision_config: AutoConfig | None = None,
         high_res_vision_config: AutoConfig | None = None,
         image_token_id: int = 100015,
+        tie_word_embeddings: bool | None = True,
         **kwargs,
     ):
         if high_res_vision_config is None:
@@ -142,6 +129,7 @@ class DeepseekVLHybridConfig(DeepseekVLConfig):
             text_config=text_config,
             vision_config=vision_config,
             image_token_id=image_token_id,
+            tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
 
@@ -473,7 +461,7 @@ class DeepseekVLHybridForConditionalGeneration(DeepseekVLForConditionalGeneratio
 
         if is_first_iteration or not kwargs.get("use_cache", True):
             # Pixel values are used only in the first iteration if available
-            # In subsquent iterations, they are already merged with text and cached
+            # In subsequent iterations, they are already merged with text and cached
             # NOTE: first iteration doesn't have to be prefill, it can be the first
             # iteration with a question and cached system prompt (continue generate from cache)
             model_inputs["pixel_values"] = pixel_values
