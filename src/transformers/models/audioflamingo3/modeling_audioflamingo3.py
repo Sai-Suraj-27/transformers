@@ -34,7 +34,7 @@ from ...modeling_layers import GradientCheckpointingLayer
 from ...modeling_outputs import BaseModelOutputWithPooling, CausalLMOutputWithPast
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from ...processing_utils import Unpack
-from ...utils import TransformersKwargs, auto_docstring, can_return_tuple, logging
+from ...utils import TransformersKwargs, auto_docstring, can_return_tuple, logging, torch_compilable_check
 from ...utils.generic import merge_with_config_defaults
 from ...utils.output_capturing import capture_outputs
 from ..auto import AutoModel, AutoModelForCausalLM
@@ -130,18 +130,15 @@ class AudioFlamingo3Attention(nn.Module):
         # for the decoder
         is_cross_attention = key_value_states is not None
 
-        # determine input shapes
-        bsz, tgt_len = hidden_states.shape[:-1]
-        q_input_shape = (bsz, tgt_len, -1, self.head_dim)
+        input_shape = hidden_states.shape[:-1]
+        hidden_shape = (*input_shape, -1, self.head_dim)
 
         # Scaling is susceptible to floating point arithmetics' inprecisions
         # which can lead to different results (this is dependent from model
         # to model, e.g. audioflamingo3 is one such case). We therefore keep the
         # original order of scaling to follow the original implementation
         # and enforce no scaling (1.0) in the attention call below.
-        query_states = self.q_proj(hidden_states) * self.scaling
-        query_states = query_states.view(*q_input_shape)
-        query_states = query_states.transpose(1, 2).contiguous()
+        query_states = (self.q_proj(hidden_states) * self.scaling).view(hidden_shape).transpose(1, 2).contiguous()
 
         # Check is encoder-decoder model is being used. Otherwise we'll get `DynamicCache`
         if past_key_values is not None and isinstance(past_key_values, EncoderDecoderCache):
@@ -160,10 +157,12 @@ class AudioFlamingo3Attention(nn.Module):
             key_states = past_key_values.layers[self.layer_idx].keys
             value_states = past_key_values.layers[self.layer_idx].values
         else:
-            key_states = self.k_proj(current_states).view(bsz, -1, self.num_heads, self.head_dim)
-            value_states = self.v_proj(current_states).view(bsz, -1, self.num_heads, self.head_dim)
-            key_states = key_states.transpose(1, 2).contiguous()
-            value_states = value_states.transpose(1, 2).contiguous()
+            # Use the query's batch dimension for kv view so that a different-batch
+            # encoder output (e.g. in tests) gets absorbed into the sequence axis,
+            # preserving backward-compatible behaviour.
+            kv_shape = (input_shape[0], -1, self.num_heads, self.head_dim)
+            key_states = self.k_proj(current_states).view(kv_shape).transpose(1, 2).contiguous()
+            value_states = self.v_proj(current_states).view(kv_shape).transpose(1, 2).contiguous()
             if past_key_values is not None:
                 key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
@@ -183,7 +182,7 @@ class AudioFlamingo3Attention(nn.Module):
             **kwargs,
         )
 
-        attn_output = attn_output.reshape(bsz, tgt_len, -1).contiguous()
+        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
         attn_output = self.out_proj(attn_output)
 
         return attn_output, attn_weights
@@ -252,7 +251,7 @@ class AudioFlamingo3PreTrainedModel(PreTrainedModel):
     input_modalities = ("audio", "text")
     supports_gradient_checkpointing = True
     _no_split_modules = ["AudioFlamingo3Attention"]
-    _skip_keys_device_placement = "past_key_values"
+    _skip_keys_device_placement = ["past_key_values"]
     _supports_flash_attn = True
     _supports_sdpa = True
 
@@ -409,6 +408,7 @@ class AudioFlamingo3MultiModalProjector(nn.Module):
 )
 class AudioFlamingo3ForConditionalGeneration(AudioFlamingo3PreTrainedModel, GenerationMixin):
     _keep_in_fp32_modules_strict = None
+    _supports_attention_backend = True
     _tp_plan = None
     _pp_plan = None
 
@@ -473,6 +473,30 @@ class AudioFlamingo3ForConditionalGeneration(AudioFlamingo3PreTrainedModel, Gene
         audio_output.pooler_output = audio_embeds[valid_mask.to(audio_embeds.device)]
 
         return audio_output
+
+    def get_placeholder_mask(
+        self, input_ids: torch.LongTensor, inputs_embeds: torch.FloatTensor, audio_features: torch.FloatTensor
+    ):
+        """
+        Obtains multimodal placeholder mask from `input_ids` or `inputs_embeds`, and checks that the placeholder token count is
+        equal to the length of multimodal features. If the lengths are different, an error is raised.
+        """
+        if input_ids is None:
+            special_audio_mask = inputs_embeds == self.get_input_embeddings()(
+                torch.tensor(self.config.audio_token_id, dtype=torch.long, device=inputs_embeds.device)
+            )
+            special_audio_mask = special_audio_mask.all(-1)
+        else:
+            special_audio_mask = input_ids == self.config.audio_token_id
+
+        n_audio_tokens = special_audio_mask.sum()
+        n_audio_features = audio_features.shape[0]
+        special_audio_mask = special_audio_mask.unsqueeze(-1).expand_as(inputs_embeds).to(inputs_embeds.device)
+        torch_compilable_check(
+            inputs_embeds[special_audio_mask].numel() == audio_features.numel(),
+            f"Audio features and audio tokens do not match, tokens: {n_audio_tokens}, features: {n_audio_features}",
+        )
+        return special_audio_mask
 
     @can_return_tuple
     @auto_docstring
@@ -560,10 +584,10 @@ class AudioFlamingo3ForConditionalGeneration(AudioFlamingo3PreTrainedModel, Gene
             audio_embeds = self.get_audio_features(input_features, input_features_mask, return_dict=True).pooler_output
 
             # replace text-audio token placeholders with audio embeddings
-            audio_token_mask = (input_ids == self.config.audio_token_id).unsqueeze(-1)
-            inputs_embeds = inputs_embeds.masked_scatter(
-                audio_token_mask.to(inputs_embeds.device), audio_embeds.to(inputs_embeds.device)
+            special_audio_mask = self.get_placeholder_mask(
+                input_ids, inputs_embeds=inputs_embeds, audio_features=audio_embeds
             )
+            inputs_embeds = inputs_embeds.masked_scatter(special_audio_mask, audio_embeds.to(inputs_embeds.device))
 
         outputs: CausalLMOutputWithPast = self.language_model(
             inputs_embeds=inputs_embeds,

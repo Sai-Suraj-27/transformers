@@ -181,6 +181,8 @@ class GenerationTesterMixin:
                 "audio_start_token_id",
                 "audio_end_token_id",
                 "vision_end_token_id",
+                "image_start_token_id",
+                "image_end_token_id",
             ]:
                 token_index = getattr(config, key, None)
                 if token_index is None and hasattr(self, "model_tester"):
@@ -997,32 +999,35 @@ class GenerationTesterMixin:
             # Prepare padding on common inputs (pad length 32)
             input_ids = inputs_dict["input_ids"]
             attention_mask = inputs_dict["attention_mask"]
-            token_type_ids = inputs_dict.get("token_type_ids", None)
             pad_token_id = getattr(config.get_text_config(decoder=True), "pad_token_id", None) or 0
             pad_size = (input_ids.shape[0], 32, *input_ids.shape[2:])
             padding = torch.ones(pad_size, dtype=input_ids.dtype, device=torch_device) * pad_token_id
-            padded_input_ids = torch.cat((padding, input_ids), dim=1)
-            padded_attention_mask = torch.cat(
+
+            padded_inputs_dict = copy.deepcopy(inputs_dict)
+            padded_inputs_dict["input_ids"] = torch.cat((padding, input_ids), dim=1)
+            padded_inputs_dict["attention_mask"] = torch.cat(
                 (torch.zeros(pad_size[:2], dtype=input_ids.dtype, device=torch_device), attention_mask), dim=1
             )
-            if token_type_ids is not None:
-                padded_token_type_ids = torch.cat(
+            if inputs_dict.get("token_type_ids") is not None:
+                padded_inputs_dict["token_type_ids"] = torch.cat(
                     (
                         # Assumption: `0` is a good default value for padding token type ids
                         torch.zeros(pad_size[:2], dtype=input_ids.dtype, device=torch_device),
-                        token_type_ids,
+                        inputs_dict["token_type_ids"],
                     ),
                     dim=1,
                 )
-            else:
-                padded_token_type_ids = None
 
-            # Get output logits from inputs with left-padding (pad length 32)
-            padded_inputs_dict = copy.deepcopy(inputs_dict)
-            padded_inputs_dict["input_ids"] = padded_input_ids
-            padded_inputs_dict["attention_mask"] = padded_attention_mask
-            if padded_token_type_ids is not None:
-                padded_inputs_dict["token_type_ids"] = padded_token_type_ids
+            if inputs_dict.get("mm_token_type_ids") is not None:
+                padded_inputs_dict["mm_token_type_ids"] = torch.cat(
+                    (
+                        # `0` is a default value of text-modality type ids
+                        torch.zeros(pad_size[:2], dtype=input_ids.dtype, device=torch_device),
+                        inputs_dict["mm_token_type_ids"],
+                    ),
+                    dim=1,
+                )
+
             padded_inputs_dict.update(padded_custom_inputs)
 
             model_kwargs_with_padding = _prepare_model_kwargs(padded_inputs_dict, signature)
@@ -2889,6 +2894,45 @@ class GenerationIntegrationTests(unittest.TestCase):
             self.assertTrue(len(warningHandler.warnings) == 1)
         finally:
             logger.removeHandler(warningHandler)
+
+    def test_inputs_embeds_warn_without_ids_for_token_based_logit_processors(self):
+        model = AutoModelForCausalLM.from_pretrained("hf-internal-testing/tiny-random-gpt2", device_map=torch_device)
+        tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-gpt2")
+        inputs = tokenizer("Hello world", return_tensors="pt").to(torch_device)
+        ids = inputs["input_ids"]
+        embeds = model.get_input_embeddings()(ids)
+
+        # Check that it raises with only embeds
+        with self.assertWarnsRegex(UserWarning, "apply the penalty only to newly generated tokens, not to the prompt"):
+            _ = model.generate(inputs_embeds=embeds, max_new_tokens=5, repetition_penalty=1.1)
+
+        # Check that it does NOT raise with both ids and embeds
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            _ = model.generate(input_ids=ids, inputs_embeds=embeds, max_new_tokens=5, repetition_penalty=1.1)
+            self.assertFalse(
+                any(
+                    "apply the penalty only to newly generated tokens, not to the prompt" in str(warn.message)
+                    for warn in w
+                )
+            )
+
+        # Check that it raises with only embeds
+        with self.assertWarnsRegex(
+            UserWarning, "n-gram constraints only to newly generated tokens, not to the prompt"
+        ):
+            _ = model.generate(inputs_embeds=embeds, max_new_tokens=5, no_repeat_ngram_size=2)
+
+        # Check that it does NOT raise with both ids and embeds
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            _ = model.generate(input_ids=ids, inputs_embeds=embeds, max_new_tokens=5, no_repeat_ngram_size=2)
+            self.assertFalse(
+                any(
+                    "n-gram constraints only to newly generated tokens, not to the prompt" in str(warn.message)
+                    for warn in w
+                )
+            )
 
     @slow
     def test_beam_search_early_stop_heuristic(self):

@@ -78,7 +78,7 @@ class JanusVisionConfig(SiglipVisionConfig):
     hidden_act: str = "gelu"
     mlp_ratio: float | int = 4.0
     attention_bias: bool = True
-    hidden_dropout_rate: float = 0.0
+    hidden_dropout_rate: float | int = 0.0
     projection_dim: int = 2048
     projection_dropout: float | int = 0.0
     use_qk_norm: bool = False
@@ -167,6 +167,7 @@ class JanusConfig(PreTrainedConfig):
     vision_config: dict | PreTrainedConfig | None = None
     vq_config: dict | PreTrainedConfig | None = None
     image_token_id: int = 100581
+    tie_word_embeddings: bool = True
 
     def __post_init__(self, **kwargs):
         if isinstance(self.text_config, dict):
@@ -212,12 +213,12 @@ class JanusPreTrainedModel(PreTrainedModel):
             init.copy_(module.position_ids, torch.arange(module.position_ids.shape[-1]).expand((1, -1)))
 
 
-@dataclass
 @auto_docstring(
     custom_intro="""
     Base class for Janus VQ-VAE mode model outputs.
     """
 )
+@dataclass
 class JanusVQVAEOutput(ModelOutput):
     r"""
     decoded_pixel_values (`torch.FloatTensor` of shape `(batch_size, num_channels, image_size, image_size)`):
